@@ -1,0 +1,27 @@
+name: Rust
+on: [push, pull_request]
+jobs:
+  check:
+    strategy:
+      matrix:
+        rust: ["1.95.0", stable]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo check --all-targets --locked
+      - run: cargo test --locked
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo doc --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Check generated files
+        run: |
+          python3 tools/generate.py
+          cargo fmt
+          git diff --exit-code -- src docs/rest-coverage.md

@@ -1,0 +1,17 @@
+{
+  "cursor": "EhIKEAckNEEAkYCzACo4degCi2caDAiCluDWBhDIvdbGAQ",
+  "trades": [
+    {
+      "count_fp": "625.00",
+      "created_time": "2026-10-21T00:44:50.416653Z",
+      "is_block_trade": false,
+      "no_price_dollars": "0.9993",
+      "taker_book_side": "bid",
+      "taker_outcome_side": "yes",
+      "taker_side": "yes",
+      "ticker": "KXMVECROSSCATEGORY-S2026RR2ZGXFSGCZBZXTX-IVWE4FKMA",
+      "trade_id": "07243441-0091-80b3-002a-3875e8028b67",
+      "yes_price_dollars": "0.0007"
+    }
+  ]
+}

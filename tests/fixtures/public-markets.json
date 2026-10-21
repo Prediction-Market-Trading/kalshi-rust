@@ -1,0 +1,264 @@
+{
+  "cursor": "CgwIgZbg1gYQiNCMqQISMktYTVZFQ1JPU1NDQVRFR09SWS1TMjAyNlJKS0NGTFhaUUpTSFNPWUUtQVNPTEZDVUlW",
+  "markets": [
+    {
+      "can_close_early": true,
+      "close_time": "2026-10-23T01:30:00Z",
+      "created_time": "2026-10-21T00:44:49.63138Z",
+      "custom_strike": {
+        "Associated Events": "KXNBAAST-26OCT20OKCSAS,KXNBAGAME-26OCT20OKCSAS,KXNBAPTS-26OCT20OKCSAS,KXNBAPTS-26OCT20OKCSAS,KXNBAPTS-26OCT20OKCSAS,KXNBAPTS-26OCT20OKCSAS,KXNBAPTS-26OCT20OKCSAS,KXNBAPTS-26OCT20OKCSAS",
+        "Associated Market Sides": "yes,yes,yes,yes,yes,yes,yes,yes",
+        "Associated Markets": "KXNBAAST-26OCT20OKCSAS-SASSCASTLE5-6,KXNBAGAME-26OCT20OKCSAS-SAS,KXNBAPTS-26OCT20OKCSAS-OKCCHOLMGREN7-10,KXNBAPTS-26OCT20OKCSAS-OKCJWILLIAMS8-10,KXNBAPTS-26OCT20OKCSAS-OKCSGILGEOUSALEXANDER2-30,KXNBAPTS-26OCT20OKCSAS-SASDFOX4-10,KXNBAPTS-26OCT20OKCSAS-SASSCASTLE5-10,KXNBAPTS-26OCT20OKCSAS-SASVWEMBANYAMA1-20",
+        "Multivariate Event Ticker": "KXMVECROSSCATEGORY-S2026OXOGOPMZGPQPURNE"
+      },
+      "event_ticker": "KXMVECROSSCATEGORY-S2026OXOGOPMZGPQPURNE",
+      "exchange_index": 1,
+      "expected_expiration_time": "2026-10-21T07:30:00Z",
+      "expiration_time": "2026-10-23T01:30:00Z",
+      "expiration_value": "",
+      "is_provisional": true,
+      "last_price_dollars": "0.0000",
+      "latest_expiration_time": "2026-10-23T01:30:00Z",
+      "market_type": "binary",
+      "mve_collection_ticker": "KXMVECROSSCATEGORY-R",
+      "mve_selected_legs": [
+        {
+          "event_ticker": "KXNBAAST-26OCT20OKCSAS",
+          "market_ticker": "KXNBAAST-26OCT20OKCSAS-SASSCASTLE5-6",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXNBAGAME-26OCT20OKCSAS",
+          "market_ticker": "KXNBAGAME-26OCT20OKCSAS-SAS",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXNBAPTS-26OCT20OKCSAS",
+          "market_ticker": "KXNBAPTS-26OCT20OKCSAS-OKCCHOLMGREN7-10",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXNBAPTS-26OCT20OKCSAS",
+          "market_ticker": "KXNBAPTS-26OCT20OKCSAS-OKCJWILLIAMS8-10",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXNBAPTS-26OCT20OKCSAS",
+          "market_ticker": "KXNBAPTS-26OCT20OKCSAS-OKCSGILGEOUSALEXANDER2-30",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXNBAPTS-26OCT20OKCSAS",
+          "market_ticker": "KXNBAPTS-26OCT20OKCSAS-SASDFOX4-10",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXNBAPTS-26OCT20OKCSAS",
+          "market_ticker": "KXNBAPTS-26OCT20OKCSAS-SASSCASTLE5-10",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXNBAPTS-26OCT20OKCSAS",
+          "market_ticker": "KXNBAPTS-26OCT20OKCSAS-SASVWEMBANYAMA1-20",
+          "side": "yes"
+        }
+      ],
+      "no_ask_dollars": "1.0000",
+      "no_bid_dollars": "1.0000",
+      "no_sub_title": "yes Stephon Castle: 6+,yes San Antonio,yes Chet Holmgren: 10+,yes Jalen Williams: 10+,yes Shai Gilgeous-Alexander: 30+,yes De'Aaron Fox: 10+,yes Stephon Castle: 10+,yes Victor Wembanyama: 20+",
+      "notional_value_dollars": "1.0000",
+      "open_interest_fp": "0.00",
+      "open_time": "2026-10-21T00:44:49Z",
+      "previous_price_dollars": "0.0000",
+      "previous_yes_ask_dollars": "0.0000",
+      "previous_yes_bid_dollars": "0.0000",
+      "price_level_structure": "center_deci_edge_centi_cent",
+      "price_ranges": [
+        {
+          "end": "0.0100",
+          "start": "0.0000",
+          "step": "0.0001"
+        },
+        {
+          "end": "0.9900",
+          "start": "0.0100",
+          "step": "0.0010"
+        },
+        {
+          "end": "1.0000",
+          "start": "0.9900",
+          "step": "0.0001"
+        }
+      ],
+      "result": "",
+      "rules_primary": "",
+      "rules_secondary": "Kalshi is not affiliated, associated, authorized, endorsed by, or in any way officially connected with the Governing League. All trademarks, logos, and brand names are the property of their respective owners.",
+      "settlement_bounds_type": "default",
+      "settlement_timer_seconds": 5,
+      "status": "active",
+      "strike_type": "custom",
+      "ticker": "KXMVECROSSCATEGORY-S2026OXOGOPMZGPQPURNE-DJQOFFPDL",
+      "title": "yes Stephon Castle: 6+,yes San Antonio,yes Chet Holmgren: 10+,yes Jalen Williams: 10+,yes Shai Gilgeous-Alexander: 30+,yes De'Aaron Fox: 10+,yes Stephon Castle: 10+,yes Victor Wembanyama: 20+",
+      "updated_time": "2026-10-21T00:44:50.164489Z",
+      "volume_24h_fp": "0.00",
+      "volume_fp": "0.00",
+      "yes_ask_dollars": "0.0000",
+      "yes_ask_size_fp": "0.00",
+      "yes_bid_dollars": "0.0000",
+      "yes_bid_size_fp": "0.00",
+      "yes_sub_title": "yes Stephon Castle: 6+,yes San Antonio,yes Chet Holmgren: 10+,yes Jalen Williams: 10+,yes Shai Gilgeous-Alexander: 30+,yes De'Aaron Fox: 10+,yes Stephon Castle: 10+,yes Victor Wembanyama: 20+"
+    },
+    {
+      "can_close_early": true,
+      "close_time": "2026-10-23T19:00:00Z",
+      "created_time": "2026-10-21T00:44:49.623061Z",
+      "custom_strike": {
+        "Associated Events": "KXUCLGAME-26OCT21AVLVIK,KXUCLGAME-26OCT21BMUARS,KXUCLGAME-26OCT21BRURCL,KXUCLGAME-26OCT21COMMUN,KXUCLGAME-26OCT21INTSHA,KXUCLGAME-26OCT21LILGAL,KXUCLGAME-26OCT21RBBFEY,KXUCLGAME-26OCT21RMARBL,KXUCLGAME-26OCT21SPOASK,KXUCLTOTAL-26OCT21AVLVIK,KXUCLTOTAL-26OCT21BMUARS,KXUCLTOTAL-26OCT21BRURCL,KXUCLTOTAL-26OCT21COMMUN,KXUCLTOTAL-26OCT21INTSHA,KXUCLTOTAL-26OCT21LILGAL,KXUCLTOTAL-26OCT21RBBFEY,KXUCLTOTAL-26OCT21RMARBL",
+        "Associated Market Sides": "yes,no,no,no,yes,no,no,yes,no,yes,yes,yes,yes,yes,yes,yes,yes",
+        "Associated Markets": "KXUCLGAME-26OCT21AVLVIK-AVL,KXUCLGAME-26OCT21BMUARS-TIE,KXUCLGAME-26OCT21BRURCL-TIE,KXUCLGAME-26OCT21COMMUN-TIE,KXUCLGAME-26OCT21INTSHA-INT,KXUCLGAME-26OCT21LILGAL-TIE,KXUCLGAME-26OCT21RBBFEY-TIE,KXUCLGAME-26OCT21RMARBL-RMA,KXUCLGAME-26OCT21SPOASK-TIE,KXUCLTOTAL-26OCT21AVLVIK-2,KXUCLTOTAL-26OCT21BMUARS-2,KXUCLTOTAL-26OCT21BRURCL-2,KXUCLTOTAL-26OCT21COMMUN-2,KXUCLTOTAL-26OCT21INTSHA-2,KXUCLTOTAL-26OCT21LILGAL-2,KXUCLTOTAL-26OCT21RBBFEY-2,KXUCLTOTAL-26OCT21RMARBL-3",
+        "Multivariate Event Ticker": "KXMVECROSSCATEGORY-S2026RJKCFLXZQJSHSOYE"
+      },
+      "event_ticker": "KXMVECROSSCATEGORY-S2026RJKCFLXZQJSHSOYE",
+      "exchange_index": 1,
+      "expected_expiration_time": "2026-10-22T01:00:00Z",
+      "expiration_time": "2026-10-23T19:00:00Z",
+      "expiration_value": "",
+      "is_provisional": true,
+      "last_price_dollars": "0.0000",
+      "latest_expiration_time": "2026-10-23T19:00:00Z",
+      "market_type": "binary",
+      "mve_collection_ticker": "KXMVECROSSCATEGORY-R",
+      "mve_selected_legs": [
+        {
+          "event_ticker": "KXUCLGAME-26OCT21AVLVIK",
+          "market_ticker": "KXUCLGAME-26OCT21AVLVIK-AVL",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21BMUARS",
+          "market_ticker": "KXUCLGAME-26OCT21BMUARS-TIE",
+          "side": "no"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21BRURCL",
+          "market_ticker": "KXUCLGAME-26OCT21BRURCL-TIE",
+          "side": "no"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21COMMUN",
+          "market_ticker": "KXUCLGAME-26OCT21COMMUN-TIE",
+          "side": "no"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21INTSHA",
+          "market_ticker": "KXUCLGAME-26OCT21INTSHA-INT",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21LILGAL",
+          "market_ticker": "KXUCLGAME-26OCT21LILGAL-TIE",
+          "side": "no"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21RBBFEY",
+          "market_ticker": "KXUCLGAME-26OCT21RBBFEY-TIE",
+          "side": "no"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21RMARBL",
+          "market_ticker": "KXUCLGAME-26OCT21RMARBL-RMA",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLGAME-26OCT21SPOASK",
+          "market_ticker": "KXUCLGAME-26OCT21SPOASK-TIE",
+          "side": "no"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21AVLVIK",
+          "market_ticker": "KXUCLTOTAL-26OCT21AVLVIK-2",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21BMUARS",
+          "market_ticker": "KXUCLTOTAL-26OCT21BMUARS-2",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21BRURCL",
+          "market_ticker": "KXUCLTOTAL-26OCT21BRURCL-2",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21COMMUN",
+          "market_ticker": "KXUCLTOTAL-26OCT21COMMUN-2",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21INTSHA",
+          "market_ticker": "KXUCLTOTAL-26OCT21INTSHA-2",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21LILGAL",
+          "market_ticker": "KXUCLTOTAL-26OCT21LILGAL-2",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21RBBFEY",
+          "market_ticker": "KXUCLTOTAL-26OCT21RBBFEY-2",
+          "side": "yes"
+        },
+        {
+          "event_ticker": "KXUCLTOTAL-26OCT21RMARBL",
+          "market_ticker": "KXUCLTOTAL-26OCT21RMARBL-3",
+          "side": "yes"
+        }
+      ],
+      "no_ask_dollars": "1.0000",
+      "no_bid_dollars": "1.0000",
+      "no_sub_title": "yes Aston Villa,no Tie,no Tie,no Tie,yes Inter,no Tie,no Tie,yes Real Madrid,no Tie,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 2.5 goals scored",
+      "notional_value_dollars": "1.0000",
+      "open_interest_fp": "0.00",
+      "open_time": "2026-10-21T00:44:49Z",
+      "previous_price_dollars": "0.0000",
+      "previous_yes_ask_dollars": "0.0000",
+      "previous_yes_bid_dollars": "0.0000",
+      "price_level_structure": "center_deci_edge_centi_cent",
+      "price_ranges": [
+        {
+          "end": "0.0100",
+          "start": "0.0000",
+          "step": "0.0001"
+        },
+        {
+          "end": "0.9900",
+          "start": "0.0100",
+          "step": "0.0010"
+        },
+        {
+          "end": "1.0000",
+          "start": "0.9900",
+          "step": "0.0001"
+        }
+      ],
+      "result": "",
+      "rules_primary": "",
+      "rules_secondary": "Kalshi is not affiliated, associated, authorized, endorsed by, or in any way officially connected with the Governing League. All trademarks, logos, and brand names are the property of their respective owners.",
+      "settlement_bounds_type": "default",
+      "settlement_timer_seconds": 5,
+      "status": "active",
+      "strike_type": "custom",
+      "ticker": "KXMVECROSSCATEGORY-S2026RJKCFLXZQJSHSOYE-ASOLFCUIV",
+      "title": "yes Aston Villa,no Tie,no Tie,no Tie,yes Inter,no Tie,no Tie,yes Real Madrid,no Tie,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 2.5 goals scored",
+      "updated_time": "2026-10-21T00:44:50.164489Z",
+      "volume_24h_fp": "0.00",
+      "volume_fp": "0.00",
+      "yes_ask_dollars": "0.0000",
+      "yes_ask_size_fp": "0.00",
+      "yes_bid_dollars": "0.0000",
+      "yes_bid_size_fp": "0.00",
+      "yes_sub_title": "yes Aston Villa,no Tie,no Tie,no Tie,yes Inter,no Tie,no Tie,yes Real Madrid,no Tie,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 1.5 goals scored,yes Over 2.5 goals scored"
+    }
+  ]
+}
