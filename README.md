@@ -196,7 +196,28 @@ The subscription channel `user_orders` emits messages tagged **`user_order`**. `
 
 `subscribe`, `unsubscribe`, `list_subscriptions` and `update_subscription` send commands; the next received messages contain the server's acknowledgment or error. You must consume those responses. Full typed command models and `send_command` support the documented less common parameters.
 
-The client handles server pings with matching pongs while `next_message` runs. It returns `None` after a clean close and preserves transport/decode errors. Use `close()` then continue reading until `None` to complete a client-initiated close handshake. The runnable stream examples handle Ctrl-C this way. There is no background reader, reconnect loop or in-memory event queue. Keep driving reads while idle. Wrap reads in `tokio::time::timeout` if you need idle timeouts.
+The client handles server pings with matching pongs while either receive method runs. Both return `None` after a clean close and preserve transport/decode errors. Use `close()` then continue reading until `None` to complete a client-initiated close handshake. The runnable stream examples handle Ctrl-C this way. There is no background reader or reconnect loop. Keep driving reads while idle.
+
+Use `next_event()` to observe heartbeats: it returns `Event::Message(Message)`, `Event::Ping(Vec<u8>)` and `Event::Pong(Vec<u8>)` in receive order. Ping/Pong payloads are preserved exactly, including empty or non-UTF-8 bytes. A matching automatic Pong is flushed before a Ping event is returned; callers do not need to reply. Pongs received in response to `ping(payload)` are observable too. Both receive methods consume the same stream; `next_message()` filters out control events it encounters.
+
+An application can choose an inactivity threshold and reset it on every incoming event. This example uses 30 seconds and propagates a timeout to the caller, which owns reconnect policy:
+
+```rust,no_run
+use kalshi_sdk_rs::websocket::{Event, WebSocket};
+use std::time::Duration;
+# async fn receive_events(socket: &mut WebSocket) -> Result<(), Box<dyn std::error::Error>> {
+while let Some(event) = tokio::time::timeout(
+    Duration::from_secs(30), socket.next_event(),
+).await?? {
+    match event {
+        Event::Message(message) => println!("{message:?}"),
+        Event::Ping(_) | Event::Pong(_) => {} // Heartbeats also reset the next read's timeout.
+    }
+}
+# Ok(()) }
+```
+
+A timeout around `next_message()` measures application-message inactivity and can expire on a healthy connection exchanging heartbeats. Use `next_event()` for connection inactivity. Cancelling and resuming a read retains pending frame parsing and control replies, including a Ping whose Pong is still being flushed.
 
 Track subscription `sid` and `seq` according to the channel's sequencing rules. After a gap or disconnect, reconnect, resubscribe and request a fresh snapshot before applying more deltas. The SDK does not reconstruct books. Unknown top-level message types retain their JSON; malformed known messages return an error. Metadata lifecycle updates and the different `ok` shapes are decoded separately.
 
