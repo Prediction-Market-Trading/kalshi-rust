@@ -1,19 +1,21 @@
 mod common;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{FutureExt, SinkExt, StreamExt};
 use kalshi_sdk_rs::{
-    websocket::{Channel, Message, SubscribeParams},
-    Client, Environment,
+    websocket::{Channel, Event, Message, SubscribeParams, WebSocket},
+    Client, Environment, Error,
 };
 use ring::signature::{UnparsedPublicKey, ED25519};
 use serde_json::{json, Value};
-use tokio::net::TcpListener;
+use std::time::Duration;
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{
     accept_hdr_async,
     tungstenite::{
         handshake::server::{Request, Response},
         Message as Frame,
     },
+    WebSocketStream,
 };
 
 #[test]
@@ -212,4 +214,211 @@ async fn clean_client_disconnect_and_auth_failure() {
             .is_none()
     );
     server.await.unwrap();
+}
+
+async fn local_socket_pair() -> (WebSocket, WebSocketStream<TcpStream>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (auth, _) = common::credentials();
+    let client = Client::builder(Environment::Demo)
+        .credentials(auth)
+        .websocket_url(format!("ws://{address}/trade-api/ws/v2"))
+        .build()
+        .unwrap();
+    let (client, server) = tokio::join!(client.connect_websocket(), async {
+        let (stream, _) = listener.accept().await.unwrap();
+        tokio_tungstenite::accept_async(stream).await.unwrap()
+    });
+    (client.unwrap(), server)
+}
+
+// Run shared assertions against both receive APIs, normalizing application messages.
+async fn receive(socket: &mut WebSocket, events: bool) -> kalshi_sdk_rs::Result<Option<Event>> {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        if events {
+            socket.next_event().await
+        } else {
+            socket
+                .next_message()
+                .await
+                .map(|message| message.map(Event::Message))
+        }
+    })
+    .await
+    .expect("WebSocket read timed out")
+}
+
+#[tokio::test]
+async fn events_preserve_interleaved_messages_and_control_payloads() {
+    let (mut socket, mut server) = local_socket_pair().await;
+    // Dropping a pending read before any data arrives must leave the socket usable.
+    assert!(socket.next_event().now_or_never().is_none());
+    server
+        .send(Frame::Text(r#"{"type":"ok","id":0}"#.into()))
+        .await
+        .unwrap();
+    assert!(matches!(
+        receive(&mut socket, true).await.unwrap(),
+        Some(Event::Message(Message::Ok(message))) if message.id == Some(0)
+    ));
+    for (index, payload) in [
+        b"heartbeat".to_vec(),
+        vec![],
+        vec![0, 255, 128, 1],
+        vec![255; 125],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        server
+            .send(Frame::Ping(payload.clone().into()))
+            .await
+            .unwrap();
+        // Only a Ping is available: receiving it must not wait for application data.
+        assert!(matches!(
+            receive(&mut socket, true).await.unwrap(),
+            Some(Event::Ping(bytes)) if bytes == payload
+        ));
+        // No additional client read is driven here: the Pong must already be flushed.
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(5), server.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+            Frame::Pong(payload.clone().into())
+        );
+        server
+            .send(Frame::Pong(payload.clone().into()))
+            .await
+            .unwrap();
+        let id = index as i64 + 1;
+        server
+            .send(Frame::Binary(
+                json!({"type":"ok","id":id}).to_string().into_bytes().into(),
+            ))
+            .await
+            .unwrap();
+        assert!(matches!(
+            receive(&mut socket, true).await.unwrap(),
+            Some(Event::Pong(bytes)) if bytes == payload
+        ));
+        assert!(matches!(
+            receive(&mut socket, true).await.unwrap(),
+            Some(Event::Message(Message::Ok(message))) if message.id == Some(id)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn caller_ping_response_is_observable() {
+    let (mut socket, mut server) = local_socket_pair().await;
+    let payload = vec![255, 0, 128];
+    socket.ping(payload.clone()).await.unwrap();
+    assert_eq!(
+        server.next().await.unwrap().unwrap(),
+        Frame::Ping(payload.clone().into())
+    );
+    server.flush().await.unwrap();
+    assert!(matches!(
+        receive(&mut socket, true).await.unwrap(),
+        Some(Event::Pong(bytes)) if bytes == payload
+    ));
+}
+
+#[tokio::test]
+async fn legacy_reads_filter_ping_and_pong_events() {
+    let (mut socket, mut server) = local_socket_pair().await;
+    server
+        .send(Frame::Ping(b"heartbeat".to_vec().into()))
+        .await
+        .unwrap();
+    server.send(Frame::Pong(vec![255, 0].into())).await.unwrap();
+    server
+        .send(Frame::Text(r#"{"type":"ok","id":9}"#.into()))
+        .await
+        .unwrap();
+    assert!(matches!(
+        receive(&mut socket, false).await.unwrap(),
+        Some(Event::Message(Message::Ok(message))) if message.id == Some(9)
+    ));
+    assert_eq!(
+        server.next().await.unwrap().unwrap(),
+        Frame::Pong(b"heartbeat".to_vec().into())
+    );
+    // Filtered control frames must not reappear if the caller switches read methods.
+    assert!(socket.next_event().now_or_never().is_none());
+}
+
+#[tokio::test]
+async fn both_receive_apis_preserve_decode_and_transport_errors() {
+    for events in [false, true] {
+        let (mut socket, mut server) = local_socket_pair().await;
+        for frame in [
+            Frame::Text("not JSON".into()),
+            Frame::Binary(br#"{"type":"ticker","msg":{}}"#.to_vec().into()),
+        ] {
+            server.send(frame).await.unwrap();
+            assert!(matches!(
+                receive(&mut socket, events).await,
+                Err(Error::Json(_))
+            ));
+        }
+        server.send(Frame::Text("[]".into())).await.unwrap();
+        assert!(matches!(
+            receive(&mut socket, events).await,
+            Err(Error::Config(_))
+        ));
+        // Decode errors consume only the bad frame; subsequent replies still work.
+        server
+            .send(Frame::Text(r#"{"type":"future","msg":{"value":1}}"#.into()))
+            .await
+            .unwrap();
+        assert!(matches!(
+            receive(&mut socket, events).await.unwrap(),
+            Some(Event::Message(Message::Unknown(value))) if value["msg"]["value"] == 1
+        ));
+        server
+            .send(Frame::Text(
+                r#"{"type":"error","id":7,"msg":{"code":5,"msg":"Unknown command"}}"#.into(),
+            ))
+            .await
+            .unwrap();
+        assert!(matches!(
+            receive(&mut socket, events).await.unwrap(),
+            Some(Event::Message(Message::Error(error))) if error.id == Some(7) && error.msg.code == 5
+        ));
+        drop(server); // Abrupt EOF must be an error rather than a clean disconnect.
+        assert!(matches!(
+            receive(&mut socket, events).await,
+            Err(Error::WebSocket(_))
+        ));
+    }
+}
+
+#[tokio::test]
+async fn both_receive_apis_complete_both_close_handshakes() {
+    for events in [false, true] {
+        for client_initiated in [false, true] {
+            let (mut socket, mut server) = local_socket_pair().await;
+            if client_initiated {
+                socket.close().await.unwrap();
+                assert!(matches!(
+                    server.next().await.unwrap().unwrap(),
+                    Frame::Close(_)
+                ));
+                server.flush().await.unwrap();
+                assert!(receive(&mut socket, events).await.unwrap().is_none());
+            } else {
+                server.close(None).await.unwrap();
+                assert!(receive(&mut socket, events).await.unwrap().is_none());
+                assert!(matches!(
+                    server.next().await.unwrap().unwrap(),
+                    Frame::Close(_)
+                ));
+            }
+            assert!(receive(&mut socket, events).await.unwrap().is_none());
+            assert!(receive(&mut socket, !events).await.unwrap().is_none());
+        }
+    }
 }

@@ -7,6 +7,7 @@
 use crate::{Client, Error, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     tungstenite::{client::IntoClientRequest, Message as Frame},
@@ -23,11 +24,81 @@ pub use models::{
     UpdateSubscriptionCommandPayloadParamsAction as UpdateAction,
 };
 
-/// A connected Predictions WebSocket. Drive [`WebSocket::next_message`] to process
-/// incoming frames, including ping/pong and close handshakes.
+/// An incoming WebSocket message or control frame.
+#[derive(Clone, Debug)]
+pub enum Event {
+    /// A typed application message decoded from a text or binary frame.
+    Message(Message),
+    /// A server ping with its exact payload. Its automatic matching pong has been flushed.
+    /// Kalshi's heartbeat pings are exposed here without special payload decoding.
+    Ping(Vec<u8>),
+    /// A received pong with its exact payload, including replies to [`WebSocket::ping`].
+    Pong(Vec<u8>),
+}
+
+/// A connected Predictions WebSocket. Drive [`WebSocket::next_event`] or
+/// [`WebSocket::next_message`] to process incoming frames and control handshakes.
+/// There is no background reader.
 pub struct WebSocket {
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
-    closed: bool,
+    receive: ReceiveState,
+}
+
+/// Control frames must survive cancellation while their automatic replies flush.
+#[derive(Default)]
+enum ReceiveState {
+    #[default]
+    Reading,
+    Ping(Vec<u8>),
+    Closing,
+    Closed,
+}
+
+impl ReceiveState {
+    async fn next_event<S>(&mut self, socket: &mut WebSocketStream<S>) -> Result<Option<Event>>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
+    {
+        loop {
+            match self {
+                Self::Closed => return Ok(None),
+                Self::Ping(payload) => {
+                    socket.flush().await?;
+                    let event = Event::Ping(std::mem::take(payload));
+                    *self = Self::Reading;
+                    return Ok(Some(event));
+                }
+                Self::Closing => {
+                    let result = socket.flush().await;
+                    *self = Self::Closed;
+                    match result {
+                        Ok(()) | Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed) => {}
+                        Err(e) => return Err(e.into()),
+                    }
+                    return Ok(None);
+                }
+                Self::Reading => {}
+            }
+            match socket.next().await {
+                Some(frame) => match frame? {
+                    Frame::Text(text) => {
+                        return Ok(Some(Event::Message(Message::from_json(&text)?)))
+                    }
+                    Frame::Binary(bytes) => {
+                        return Ok(Some(Event::Message(Message::from_slice(&bytes)?)));
+                    }
+                    Frame::Ping(payload) => *self = Self::Ping(payload.to_vec()),
+                    Frame::Pong(payload) => return Ok(Some(Event::Pong(payload.to_vec()))),
+                    Frame::Close(_) => *self = Self::Closing,
+                    Frame::Frame(_) => {}
+                },
+                None => {
+                    *self = Self::Closed;
+                    return Ok(None);
+                }
+            }
+        }
+    }
 }
 
 impl Client {
@@ -49,7 +120,7 @@ impl Client {
                 .map_err(|_| Error::Config("WebSocket handshake timed out".into()))??;
         Ok(WebSocket {
             socket,
-            closed: false,
+            receive: ReceiveState::default(),
         })
     }
 }
@@ -102,30 +173,48 @@ impl WebSocket {
         })
         .await
     }
-    /// Receive a typed message. Returns `None` on clean disconnect, and transport or
-    /// decode errors separately. Ping frames receive matching pongs automatically.
-    /// Protocol `error` replies are returned as [`Message::Error`], with command IDs.
+    /// Receive a typed message or an incoming ping/pong, preserving control payloads.
+    /// Matching pongs are flushed automatically before returning [`Event::Ping`].
+    /// Returns `None` on clean disconnect; transport and decode failures are errors.
+    /// Protocol `error` replies remain [`Event::Message`] containing [`Message::Error`].
+    ///
+    /// Cancelling this read retains pending frame parsing and control replies for
+    /// the next read. Both receive methods consume the same ordered stream.
+    /// Keep driving reads to service heartbeats. A timeout around this method can
+    /// detect inactivity even when no application messages are expected:
+    ///
+    /// ```rust,no_run
+    /// use kalshi_sdk_rs::websocket::{Event, WebSocket};
+    /// use std::time::Duration;
+    /// # async fn receive(socket: &mut WebSocket) -> Result<(), Box<dyn std::error::Error>> {
+    /// // The application chooses its inactivity threshold.
+    /// while let Some(event) = tokio::time::timeout(
+    ///     Duration::from_secs(30), socket.next_event(),
+    /// ).await?? {
+    ///     match event {
+    ///         Event::Message(message) => println!("{message:?}"),
+    ///         Event::Ping(_) | Event::Pong(_) => {} // Also resets the next read's timeout.
+    ///     }
+    /// }
+    /// # Ok(()) }
+    /// ```
+    pub async fn next_event(&mut self) -> Result<Option<Event>> {
+        self.receive.next_event(&mut self.socket).await
+    }
+
+    /// Receive a typed message, filtering out incoming ping/pong events.
+    /// Returns `None` on clean disconnect, and transport or decode errors separately.
+    /// Ping frames receive matching pongs automatically. Protocol `error` replies
+    /// are returned as [`Message::Error`], with command IDs.
+    ///
+    /// A timeout around this method measures application-message inactivity, even
+    /// while heartbeats are arriving. Use [`Self::next_event`] to observe that activity.
     pub async fn next_message(&mut self) -> Result<Option<Message>> {
-        if self.closed {
-            return Ok(None);
-        }
-        while let Some(frame) = self.socket.next().await {
-            match frame? {
-                Frame::Text(text) => return Ok(Some(Message::from_json(&text)?)),
-                Frame::Binary(bytes) => return Ok(Some(Message::from_slice(&bytes)?)),
-                Frame::Ping(_) => self.socket.flush().await?,
-                Frame::Close(_) => {
-                    self.closed = true;
-                    match self.socket.flush().await {
-                        Ok(()) | Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed) => {}
-                        Err(e) => return Err(e.into()),
-                    }
-                    return Ok(None);
-                }
-                Frame::Pong(_) | Frame::Frame(_) => {}
+        while let Some(event) = self.next_event().await? {
+            if let Event::Message(message) = event {
+                return Ok(Some(message));
             }
         }
-        self.closed = true;
         Ok(None)
     }
     /// Send a WebSocket ping with caller-supplied payload (maximum 125 bytes).
@@ -133,7 +222,8 @@ impl WebSocket {
         self.socket.send(Frame::Ping(payload.into())).await?;
         Ok(())
     }
-    /// Initiate a clean close. Call `next_message` until `None` to finish the handshake.
+    /// Initiate a clean close. Call [`Self::next_event`] or [`Self::next_message`]
+    /// until `None` to finish the handshake.
     pub async fn close(&mut self) -> Result<()> {
         self.socket.close(None).await?;
         Ok(())
@@ -143,3 +233,61 @@ impl WebSocket {
 #[path = "websocket_messages.rs"]
 mod messages;
 pub use messages::Message;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::FutureExt;
+    use std::time::Duration;
+    use tokio::io::AsyncReadExt;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+
+    #[tokio::test]
+    async fn cancelled_control_reply_flushes_resume_without_losing_events() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for frame in [
+                Frame::Ping(b"heartbeat".to_vec().into()),
+                Frame::Close(None),
+            ] {
+                let (client, server) = tokio::io::duplex(64);
+                let mut client = WebSocketStream::from_raw_socket(client, Role::Client, None).await;
+                let mut server = WebSocketStream::from_raw_socket(server, Role::Server, None).await;
+                let mut receive = ReceiveState::default();
+
+                // A masked client frame uses 6 header bytes. Fill 60 of the 64 bytes
+                // so either automatic reply can write only part of its frame.
+                client
+                    .send(Frame::Text("x".repeat(54).into()))
+                    .await
+                    .unwrap();
+                server.send(frame.clone()).await.unwrap();
+                assert!(receive.next_event(&mut client).now_or_never().is_none());
+
+                // Drain the unrelated data directly (the server may already be closing).
+                // Any partially written control reply remains for server.next() to parse.
+                let mut unrelated = [0; 60];
+                server.get_mut().read_exact(&mut unrelated).await.unwrap();
+                let event = receive.next_event(&mut client).await.unwrap();
+                match frame {
+                    Frame::Ping(payload) => {
+                        assert!(matches!(event, Some(Event::Ping(bytes)) if bytes == payload));
+                        assert_eq!(server.next().await.unwrap().unwrap(), Frame::Pong(payload));
+                        // The retained Ping was delivered exactly once.
+                        assert!(receive.next_event(&mut client).now_or_never().is_none());
+                    }
+                    Frame::Close(_) => {
+                        assert!(event.is_none());
+                        assert!(matches!(
+                            server.next().await.unwrap().unwrap(),
+                            Frame::Close(_)
+                        ));
+                        assert!(receive.next_event(&mut client).await.unwrap().is_none());
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        })
+        .await
+        .expect("cancelled control reply did not resume");
+    }
+}
