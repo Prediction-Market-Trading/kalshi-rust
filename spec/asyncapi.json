@@ -130,7 +130,7 @@
     "orderbook_delta": {
       "address": "orderbook_delta",
       "title": "Orderbook Updates",
-      "description": "Real-time orderbook price level changes. Provides incremental updates to maintain a live orderbook.\n\n**Requirements:**\n- Authentication required\n- Market specification required:\n  - Use `market_ticker` (string) for a single market\n  - Use `market_tickers` (array of strings) for multiple markets\n  - `market_id`/`market_ids` are not supported for this channel\n- Sends `orderbook_snapshot` first, then incremental `orderbook_delta` updates\n- Supports `update_subscription` with `add_markets` / `delete_markets` / `get_snapshot` actions\n- `get_snapshot` returns an `orderbook_snapshot` for the requested `market_tickers` without modifying the subscription\n\n**Use case:** Building and maintaining a real-time orderbook\n",
+      "description": "Real-time orderbook price level changes. Provides incremental updates to maintain a live orderbook.\n\n**Requirements:**\n- Authentication required\n- Market specification required:\n  - Use `market_ticker` (string) for a single market\n  - Use `market_tickers` (array of strings) for multiple markets\n  - `market_id`/`market_ids` are not supported for this channel\n- Sends `orderbook_snapshot` first, then incremental `orderbook_delta` updates\n- Supports `update_subscription` with `add_markets` / `delete_markets` / `get_snapshot` actions\n- `get_snapshot` returns an `orderbook_snapshot` for the requested `market_tickers` without modifying the subscription\n\n**Matching updates across connections:**\n- `clock` is the exchange clock. It is the same on every connection, so it can match a market's updates across redundant connections; `seq` counts messages on one subscription only\n- One exchange action can make several deltas, so several deltas can share a `clock`. Every connection sends them in the same order, before any delta for that market with a higher `clock`\n- A snapshot includes every change with a `clock` at or below its own; the deltas that follow it on that connection have higher clocks\n- While you are subscribed to a market, its clocks never go down outside exchange maintenance, but they skip values. They are not comparable across markets. Keep checking `seq` on each connection for missed messages\n- A market's clock may decrease during exchange maintenance, so don't compare clocks from before a maintenance period with clocks after it\n\n**Use case:** Building and maintaining a real-time orderbook\n",
       "messages": {
         "orderbookSnapshot": {
           "$ref": "#/components/messages/orderbookSnapshot"
@@ -1829,6 +1829,7 @@
               "msg": {
                 "market_ticker": "FED-23DEC-T3.00",
                 "market_id": "9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1",
+                "clock": 4182057,
                 "yes_dollars_fp": [
                   [
                     "0.0800",
@@ -1874,6 +1875,7 @@
               "msg": {
                 "market_ticker": "FED-23DEC-T3.00",
                 "market_id": "9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1",
+                "clock": 4182061,
                 "price_dollars": "0.9600",
                 "delta_fp": "-54.00",
                 "side": "yes",
@@ -3793,7 +3795,8 @@
             "type": "object",
             "required": [
               "market_ticker",
-              "market_id"
+              "market_id",
+              "clock"
             ],
             "properties": {
               "market_ticker": {
@@ -3801,6 +3804,12 @@
               },
               "market_id": {
                 "$ref": "#/components/schemas/marketId"
+              },
+              "clock": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "Exchange clock of the newest change this snapshot includes, or 0 if the market has no recorded change.\nThe snapshot includes every change to this market with a clock at or below this one, and none above it.\n"
               },
               "yes_dollars_fp": {
                 "type": "array",
@@ -3857,6 +3866,7 @@
             "required": [
               "market_ticker",
               "market_id",
+              "clock",
               "price_dollars",
               "delta_fp",
               "side"
@@ -3867,6 +3877,12 @@
               },
               "market_id": {
                 "$ref": "#/components/schemas/marketId"
+              },
+              "clock": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 1,
+                "description": "Exchange clock of the exchange action that made this change. Every connection sends the same clock for the same change.\nSeveral deltas can share a clock when one action makes several changes.\n"
               },
               "price_dollars": {
                 "type": "string",

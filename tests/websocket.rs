@@ -46,7 +46,7 @@ fn official_server_examples_decode_into_known_typed_variants() {
                 msg.remove(field);
             }
         }
-        // Orderbook delta's `side` and string `ts` are still canonical in that schema.
+        // Orderbook delta's `side` is still required in that schema.
         if payload["type"] == "orderbook_delta" {
             continue;
         }
@@ -68,7 +68,7 @@ fn unknown_messages_are_retained_and_malformed_known_messages_are_errors() {
 
 #[test]
 fn empty_books_negative_deltas_and_shared_envelope_types() {
-    let message=Message::from_json(r#"{"type":"orderbook_snapshot","sid":1,"seq":1,"msg":{"market_ticker":"T","market_id":"I"}}"#).unwrap();
+    let message=Message::from_json(r#"{"type":"orderbook_snapshot","sid":1,"seq":1,"msg":{"market_ticker":"T","market_id":"I","clock":0}}"#).unwrap();
     assert!(matches!(message,Message::OrderbookSnapshot(v) if v.msg.yes_dollars_fp.is_none()));
     assert!(matches!(
         Message::from_json(r#"{"type":"ok","id":3,"msg":[]}"#).unwrap(),
@@ -84,6 +84,100 @@ fn empty_books_negative_deltas_and_shared_envelope_types() {
         Message::SubscribedIndicesResponse(_)
     ));
     assert!(matches!(Message::from_json(r#"{"type":"market_lifecycle_v2","sid":1,"seq":2,"msg":{"event_type":"metadata_updated","market_ticker":"T"}}"#).unwrap(),Message::MarketMetadataUpdated(_)));
+}
+
+fn orderbook_examples() -> impl Iterator<Item = Value> {
+    let cases: Vec<Value> =
+        serde_json::from_str(include_str!("fixtures/ws-official.json")).unwrap();
+    cases.into_iter().filter_map(|case| {
+        let payload = case["payload"].clone();
+        matches!(
+            payload["type"].as_str(),
+            Some("orderbook_snapshot" | "orderbook_delta")
+        )
+        .then_some(payload)
+    })
+}
+
+#[test]
+fn orderbook_clocks_preserve_exact_integers_and_serialize_in_the_message() {
+    for mut payload in orderbook_examples() {
+        let documented_clock = payload["msg"]["clock"].as_i64().unwrap();
+        let clocks = if payload["type"] == "orderbook_snapshot" {
+            vec![0, documented_clock, 9_007_199_254_740_993, i64::MAX]
+        } else {
+            vec![documented_clock, 9_007_199_254_740_993, i64::MAX]
+        };
+        for clock in clocks {
+            payload["msg"]["clock"] = json!(clock);
+            let text = payload.to_string();
+            for message in [
+                Message::from_json(&text).unwrap(),
+                Message::from_slice(text.as_bytes()).unwrap(),
+            ] {
+                let serialized = match message {
+                    Message::OrderbookSnapshot(snapshot) => {
+                        assert_eq!(snapshot.msg.clock, clock);
+                        serde_json::to_value(snapshot).unwrap()
+                    }
+                    Message::OrderbookDelta(delta) => {
+                        assert_eq!(delta.msg.clock, clock);
+                        serde_json::to_value(delta).unwrap()
+                    }
+                    other => panic!("expected an orderbook message, got {other:?}"),
+                };
+                assert_eq!(serialized, payload);
+            }
+        }
+    }
+}
+
+#[test]
+fn orderbook_clocks_are_required_and_non_null() {
+    for payload in orderbook_examples() {
+        let mut missing = payload.clone();
+        missing["msg"].as_object_mut().unwrap().remove("clock");
+        let mut null = payload.clone();
+        null["msg"]["clock"] = Value::Null;
+        for input in [missing, null] {
+            let text = input.to_string();
+            for result in [
+                Message::from_json(&text),
+                Message::from_slice(text.as_bytes()),
+            ] {
+                assert!(
+                    matches!(result, Err(Error::Json(_))),
+                    "unexpectedly accepted {text}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn orderbook_clocks_reject_invalid_int64_values() {
+    for payload in orderbook_examples() {
+        for invalid in [
+            json!("4182057"),
+            json!(true),
+            json!(1.5),
+            json!({}),
+            json!(i64::MAX as u64 + 1),
+            serde_json::from_str("-9223372036854775809").unwrap(),
+        ] {
+            let mut invalid_payload = payload.clone();
+            invalid_payload["msg"]["clock"] = invalid;
+            let text = invalid_payload.to_string();
+            assert!(
+                matches!(Message::from_json(&text), Err(Error::Json(_))),
+                "unexpectedly accepted {text}"
+            );
+            assert!(matches!(
+                Message::from_slice(text.as_bytes()),
+                Err(Error::Json(_))
+            ));
+        }
+    }
 }
 
 #[tokio::test]
@@ -246,6 +340,103 @@ async fn receive(socket: &mut WebSocket, events: bool) -> kalshi_sdk_rs::Result<
     })
     .await
     .expect("WebSocket read timed out")
+}
+
+#[tokio::test]
+async fn both_receive_apis_preserve_orderbook_clocks_and_repeated_clock_deltas() {
+    let examples: Vec<Value> = orderbook_examples().collect();
+    for events in [false, true] {
+        let (mut socket, mut server) = local_socket_pair().await;
+        let mut snapshot = examples[0].clone();
+        snapshot["seq"] = json!(1);
+        let snapshot_clock = snapshot["msg"]["clock"].as_i64().unwrap();
+        server
+            .send(Frame::Text(snapshot.to_string().into()))
+            .await
+            .unwrap();
+        match receive(&mut socket, events).await.unwrap() {
+            Some(Event::Message(Message::OrderbookSnapshot(message))) => {
+                assert_eq!(message.seq, 1);
+                assert_eq!(message.msg.clock, snapshot_clock);
+                assert_eq!(serde_json::to_value(message).unwrap(), snapshot);
+            }
+            other => panic!("expected a snapshot, got {other:?}"),
+        }
+
+        // One exchange action can produce several distinct deltas with one clock.
+        // Clocks can also skip values; neither case should filter any messages.
+        for (seq, clock, price) in [
+            (2, 9_007_199_254_740_993_i64, "0.9600"),
+            (3, 9_007_199_254_740_993, "0.9500"),
+            (4, 9_007_199_254_741_000, "0.9400"),
+        ] {
+            let mut delta = examples[1].clone();
+            delta["seq"] = json!(seq);
+            delta["msg"]["clock"] = json!(clock);
+            delta["msg"]["price_dollars"] = json!(price);
+            server
+                .send(Frame::Binary(delta.to_string().into_bytes().into()))
+                .await
+                .unwrap();
+            match receive(&mut socket, events).await.unwrap() {
+                Some(Event::Message(Message::OrderbookDelta(message))) => {
+                    assert_eq!(message.seq, seq);
+                    assert_eq!(message.msg.clock, clock);
+                    assert_eq!(serde_json::to_value(message).unwrap(), delta);
+                }
+                other => panic!("expected a delta, got {other:?}"),
+            }
+        }
+        socket.close().await.unwrap();
+        assert!(matches!(
+            server.next().await.unwrap().unwrap(),
+            Frame::Close(_)
+        ));
+        server.flush().await.unwrap();
+        assert!(receive(&mut socket, events).await.unwrap().is_none());
+    }
+}
+
+#[tokio::test]
+async fn both_receive_apis_reject_missing_or_null_clocks_and_decode_subsequent_messages() {
+    for events in [false, true] {
+        let (mut socket, mut server) = local_socket_pair().await;
+        let payloads = orderbook_examples()
+            .chain(orderbook_examples())
+            .chain(orderbook_examples());
+        for (index, mut payload) in payloads.enumerate() {
+            payload["seq"] = json!(index + 1);
+            if index < 2 {
+                payload["msg"].as_object_mut().unwrap().remove("clock");
+            } else if index < 4 {
+                payload["msg"]["clock"] = Value::Null;
+            }
+            server
+                .send(Frame::Text(payload.to_string().into()))
+                .await
+                .unwrap();
+            if index < 4 {
+                assert!(matches!(
+                    receive(&mut socket, events).await,
+                    Err(Error::Json(_))
+                ));
+                continue;
+            }
+            let expected_clock = payload["msg"]["clock"].as_i64().unwrap();
+            let serialized = match receive(&mut socket, events).await.unwrap() {
+                Some(Event::Message(Message::OrderbookSnapshot(message))) => {
+                    assert_eq!(message.msg.clock, expected_clock);
+                    serde_json::to_value(message).unwrap()
+                }
+                Some(Event::Message(Message::OrderbookDelta(message))) => {
+                    assert_eq!(message.msg.clock, expected_clock);
+                    serde_json::to_value(message).unwrap()
+                }
+                other => panic!("expected an orderbook message, got {other:?}"),
+            };
+            assert_eq!(serialized, payload);
+        }
+    }
 }
 
 #[tokio::test]

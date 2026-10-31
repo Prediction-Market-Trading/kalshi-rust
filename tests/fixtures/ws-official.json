@@ -130,6 +130,7 @@
       "msg": {
         "market_ticker": "FED-23DEC-T3.00",
         "market_id": "9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1",
+        "clock": 4182057,
         "yes_dollars_fp": [
           [
             "0.0800",
@@ -163,6 +164,7 @@
       "msg": {
         "market_ticker": "FED-23DEC-T3.00",
         "market_id": "9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1",
+        "clock": 4182061,
         "price_dollars": "0.9600",
         "delta_fp": "-54.00",
         "side": "yes",

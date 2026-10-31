@@ -1,10 +1,20 @@
-mod common;
-use kalshi_sdk_rs::websocket::{Channel, Message, SubscribeParams};
+use kalshi_sdk_rs::{
+    websocket::{Channel, Message, SubscribeParams},
+    Client, Credentials, Environment,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let environment = match std::env::var("KALSHI_ENV").as_deref() {
+        Ok("demo") | Err(std::env::VarError::NotPresent) => Environment::Demo,
+        Ok("production") => Environment::Production,
+        _ => return Err("KALSHI_ENV must be demo or production".into()),
+    };
     let ticker = std::env::var("KALSHI_MARKET_TICKER")?;
-    let mut socket = common::authenticated_demo()?.connect_websocket().await?;
+    let client = Client::builder(environment)
+        .credentials(Credentials::from_env()?)
+        .build()?;
+    let mut socket = client.connect_websocket().await?;
     socket
         .subscribe(
             1,
@@ -21,7 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::select! {
             result = socket.next_message() => match result? {
                 Some(Message::Ticker(tick)) => println!("{}: {}", tick.msg.market_ticker, tick.msg.price_dollars),
-                Some(Message::OrderbookDelta(delta)) => println!("seq={} {} {}", delta.seq, delta.msg.price_dollars, delta.msg.delta_fp),
+                Some(Message::OrderbookSnapshot(snapshot)) => println!("{}", serde_json::to_string(&snapshot)?),
+                Some(Message::OrderbookDelta(delta)) => println!("{}", serde_json::to_string(&delta)?),
                 Some(message) => println!("{message:?}"),
                 None => return Ok(()),
             },

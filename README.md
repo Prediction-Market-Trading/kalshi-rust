@@ -29,7 +29,7 @@ Choose an environment explicitly; demo and production credentials are separate. 
 
 The older `api.elections.kalshi.com` and `demo-api.kalshi.co` hosts remain supported by Kalshi and can be selected with builder URL overrides. Predictions still uses the `/trade-api/v2` URL prefix; the OpenAPI package version `3.34.0` is a separate version number.
 
-The read-only public examples use production market data. Every authenticated example and integration test is hardcoded to **Demo**. The library itself permits production trading when you explicitly choose `Environment::Production`.
+The read-only public examples use production market data. The authenticated `market_stream` example selects Demo (the default) or production via `KALSHI_ENV`; the other authenticated examples and integration tests use **Demo**. The library itself permits production trading when you explicitly choose `Environment::Production`.
 
 ## Public market data
 
@@ -182,8 +182,8 @@ socket.subscribe(1, SubscribeParams {
 while let Some(message) = socket.next_message().await? {
     match message {
         Message::OrderbookDelta(delta) => {
-            println!("seq={} price={} change={}", delta.seq,
-                delta.msg.price_dollars, delta.msg.delta_fp);
+            println!("seq={} clock={} price={} change={}", delta.seq,
+                delta.msg.clock, delta.msg.price_dollars, delta.msg.delta_fp);
         }
         Message::Error(error) => eprintln!("Subscription error: {:?}", error.msg),
         _ => {}
@@ -221,6 +221,8 @@ A timeout around `next_message()` measures application-message inactivity and ca
 
 Track subscription `sid` and `seq` according to the channel's sequencing rules. After a gap or disconnect, reconnect, resubscribe and request a fresh snapshot before applying more deltas. The SDK does not reconstruct books. Unknown top-level message types retain their JSON; malformed known messages return an error. Metadata lifecycle updates and the different `ok` shapes are decoded separately.
 
+Orderbook snapshots and deltas expose the required exchange clock as `message.msg.clock: i64`. Clock values are preserved exactly without deduplication or ordering enforcement. The clock identifies a market's changes across connections, while `seq` tracks messages on an individual subscription. Several deltas can share one clock, values can skip, and clocks cannot be compared across markets or across an exchange maintenance reset. Snapshot clock zero means there is no recorded change. Missing or null clocks produce decoding errors. The temporary `Option<i64>` compatibility workaround was removed after the October 29 release documented in [Kalshi's changelog](https://docs.kalshi.com/changelog). See [Kalshi's clock semantics](https://docs.kalshi.com/websockets/orderbook-updates).
+
 `use_yes_price: true` chooses yes-leg pricing on both sides of WebSocket orderbook messages. The documented default is currently false with a future migration planned, so choose the convention explicitly. This flag does not transform REST orderbooks. [Official order direction and pricing guide](https://docs.kalshi.com/getting_started/order_direction).
 
 ## Errors and rate limits
@@ -237,9 +239,44 @@ The SDK sends each request once. It has no automatic retries or rate limiter. Ha
 | `cargo run --example orderbook` | Production orderbook for `KALSHI_MARKET_TICKER` | None |
 | `cargo run --example balance` | Demo account balance | Demo |
 | `cargo run --example demo_order` | Submit/cancel guarded demo order | Demo, explicit opt-in |
-| `cargo run --example market_stream` | Demo ticker, trades, orderbook stream | Demo |
+| `cargo run --example market_stream` | Ticker, trades, orderbook snapshots/deltas with clocks | Demo by default; production via `KALSHI_ENV` |
 | `cargo run --example user_stream` | Demo order and fill updates | Demo |
 | `cargo run --example public_smoke` | Read-only public compatibility probe | None |
+
+### Live market stream
+
+The existing `market_stream` example loads credentials with `Credentials::from_env()` and streams until Ctrl+C. Set `KALSHI_MARKET_TICKER` to an active market in the selected environment. `KALSHI_ENV` accepts `demo` (the default when unset) or `production`; invalid values fail before connecting. Use credentials issued for that environment. The example subscribes to market data and does not submit orders.
+
+PowerShell:
+
+```powershell
+$env:KALSHI_ENV = 'demo' # Use 'production' with production credentials and ticker.
+$env:KALSHI_API_KEY_ID = 'your-demo-key-id'
+$env:KALSHI_PRIVATE_KEY_PATH = 'C:\path\to\demo-private-key.pem'
+$env:KALSHI_MARKET_TICKER = 'YOUR-OPEN-DEMO-MARKET'
+cargo run --example market_stream
+```
+
+POSIX shell:
+
+```sh
+export KALSHI_ENV=demo # Use production with production credentials and ticker.
+export KALSHI_API_KEY_ID='your-demo-key-id'
+export KALSHI_PRIVATE_KEY_PATH='/absolute/path/to/demo-private-key.pem'
+export KALSHI_MARKET_TICKER='YOUR-OPEN-DEMO-MARKET'
+cargo run --example market_stream
+```
+
+`KALSHI_PRIVATE_KEY_PEM` with actual newlines can replace the path variable and takes precedence when both are set. The SDK does not load `.env` files automatically. Credentials are never printed.
+
+Each successfully decoded orderbook snapshot and delta is printed as a complete typed JSON envelope on one line, including numeric `msg.clock`. Missing or null clocks cause a decoding error and stop this example. For example:
+
+```json
+{"type":"orderbook_snapshot","sid":2,"seq":2,"msg":{"market_ticker":"FED-23DEC-T3.00","market_id":"9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1","clock":4182057,"yes_dollars_fp":[["0.0800","300.00"],["0.2200","333.00"]],"no_dollars_fp":[["0.5400","20.00"],["0.5600","146.00"]]},"sending_ts_ms":1669149841234}
+{"type":"orderbook_delta","sid":2,"seq":3,"msg":{"market_ticker":"FED-23DEC-T3.00","market_id":"9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1","clock":4182061,"price_dollars":"0.9600","delta_fp":"-54.00","side":"yes","ts":"2022-11-22T20:44:01Z","ts_ms":1669149841000},"sending_ts_ms":1669149841123}
+```
+
+These are documentation values, not a live capture. Ticker, trade and subscription messages retain their existing text/Debug output, so the entire output stream is not JSON Lines.
 
 ## Verification and maintenance
 

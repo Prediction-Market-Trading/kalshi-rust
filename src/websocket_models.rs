@@ -1282,6 +1282,10 @@ pub struct OrderbookSnapshotPayloadMsg {
     /// API field `market_id`.
     #[serde(rename = "market_id")]
     pub market_id: MarketId,
+    /// Exchange clock of the newest change this snapshot includes, or 0 if the market has no recorded change.
+    /// The snapshot includes every change to this market with a clock at or below this one, and none above it.
+    #[serde(rename = "clock")]
+    pub clock: i64,
     /// Optional - This key will not exist if there are no Yes offers in the orderbook.
     /// Price levels represented as \[price_in_dollars, contract_count_fp\].
     /// Format: \[price_in_dollars, contract_count_fp\]
@@ -1338,6 +1342,10 @@ pub struct OrderbookDeltaPayloadMsg {
     /// API field `market_id`.
     #[serde(rename = "market_id")]
     pub market_id: MarketId,
+    /// Exchange clock of the exchange action that made this change. Every connection sends the same clock for the same change.
+    /// Several deltas can share a clock when one action makes several changes.
+    #[serde(rename = "clock")]
+    pub clock: i64,
     /// Price level in dollars
     #[serde(rename = "price_dollars")]
     pub price_dollars: FixedPointDollars,
