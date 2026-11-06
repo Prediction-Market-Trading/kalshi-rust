@@ -207,14 +207,58 @@ impl Client {
     }
 }
 
+// Preserve RFC 3986 unreserved characters; all identifiers are raw input.
+const PATH_SEGMENT_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
 pub(crate) fn segment(value: &str) -> Result<String> {
     if value.is_empty() || value == "." || value == ".." {
         return Err(Error::Config(
             "path identifiers must be nonempty and must not be dot segments".into(),
         ));
     }
-    Ok(
-        percent_encoding::utf8_percent_encode(value, percent_encoding::NON_ALPHANUMERIC)
-            .to_string(),
-    )
+    Ok(percent_encoding::utf8_percent_encode(value, PATH_SEGMENT_ENCODE_SET).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::segment;
+    use crate::Error;
+
+    #[test]
+    fn segments_preserve_unreserved_characters() {
+        for value in [
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~",
+            "123e4567-e89b-12d3-a456-426614174000",
+            ".hidden",
+            "..prefix",
+            "...",
+        ] {
+            assert_eq!(segment(value).unwrap(), value);
+        }
+    }
+
+    #[test]
+    fn segments_encode_reserved_characters_and_raw_utf8() {
+        for (raw, expected) in [
+            (
+                ":/?#[]@!$&'()*+,;= %\\",
+                "%3A%2F%3F%23%5B%5D%40%21%24%26%27%28%29%2A%2B%2C%3B%3D%20%25%5C",
+            ),
+            ("café/東京🦀", "caf%C3%A9%2F%E6%9D%B1%E4%BA%AC%F0%9F%A6%80"),
+            ("%2F%2D%2E", "%252F%252D%252E"),
+        ] {
+            assert_eq!(segment(raw).unwrap(), expected, "raw identifier: {raw:?}");
+        }
+    }
+
+    #[test]
+    fn segments_reject_empty_and_complete_dot_segments() {
+        for value in ["", ".", ".."] {
+            assert!(matches!(segment(value), Err(Error::Config(_))));
+        }
+    }
 }
