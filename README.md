@@ -29,7 +29,7 @@ Choose an environment explicitly; demo and production credentials are separate. 
 
 The older `api.elections.kalshi.com` and `demo-api.kalshi.co` hosts remain supported by Kalshi and can be selected with builder URL overrides. Predictions still uses the `/trade-api/v2` URL prefix; the OpenAPI package version `3.34.0` is a separate version number.
 
-The existing read-only public predictions examples use production market data. The authenticated `market_stream`, `margin_account`, `margin_stream` and `margin_orderbook_log` examples select Demo (the default) or production via `KALSHI_ENV`; other authenticated examples and all integration tests use **Demo**. The library itself permits production trading when you explicitly choose `Environment::Production`.
+The existing read-only public predictions examples use production market data. The authenticated `market_stream`, `margin_account`, `margin_stream`, `margin_orderbook_log`, `margin_order_lifecycle` and `margin_transfer` examples select Demo (the default) or production via `KALSHI_ENV`; other authenticated examples and all integration tests use **Demo**. The library itself permits production trading when you explicitly choose `Environment::Production`.
 
 ## Perpetuals (margin)
 
@@ -271,6 +271,8 @@ The SDK sends each request once. It has no automatic retries or rate limiter. Ha
 | `cargo run --example margin_account` | Perps enablement, markets and account balance | Demo by default; production via `KALSHI_ENV` |
 | `cargo run --example margin_stream` | Perps ticker, trades and bid/ask orderbook updates | Demo by default; production via `KALSHI_ENV` |
 | `cargo run --example margin_orderbook_log -- --seconds 5` | Perps orderbook snapshots/updates saved as JSONL for five seconds; [configuration](docs/margin.md#record-a-short-orderbook-feed) | Demo by default; production via `KALSHI_ENV` |
+| `cargo run --example margin_order_lifecycle -- --submit --seconds 5` | Print balances, post a one-contract `KXETHPERP` bid at $0.01, log its order updates and cancel; [configuration](docs/margin.md#place-and-cancel-a-perps-order) | Demo by default; production via `KALSHI_ENV`; explicit `--submit` opt-in |
+| `cargo run --example margin_transfer -- --submit` | Transfer exactly $1 from primary predictions shard 0 to primary perps, preserving transfer state; [configuration](docs/margin.md#transfer-one-dollar-from-predictions-to-perps) | Demo by default; production via `KALSHI_ENV`; explicit `--submit` opt-in |
 
 ### Live market stream
 

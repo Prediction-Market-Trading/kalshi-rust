@@ -113,6 +113,46 @@ cargo run --example margin_orderbook_log -- --ticker YOUR-PERPS-TICKER --seconds
 
 The default path is `target/margin-orderbook-<unix-ms>.jsonl`. Existing files are never truncated: choose another output path for a subsequent run. Use `--help` for options. A run with an initial snapshot and no deltas is valid when the book does not change; receiving no snapshot reports an error. The example never submits an order.
 
+### Place and cancel a perps order
+
+`margin_order_lifecycle` prints margin balances, then posts a **one-contract buy limit order at $0.0100 on `KXETHPERP`**. It requires positive available collateral in the selected cross-margin subaccount, subscribes to `user_orders` and waits for the acknowledgment before submitting. It continues reading the stream during REST requests, lets the order rest for up to five seconds by default, then requests cancellation.
+
+Run it with matching credentials and an explicit submission opt-in:
+
+```powershell
+$env:KALSHI_ENV = 'demo' # Use 'production' with production credentials to trade real funds.
+$env:KALSHI_API_KEY_ID = 'your-demo-key-id'
+$env:KALSHI_PRIVATE_KEY_PATH = 'C:\path\to\demo-private-key.pem'
+cargo run --example margin_order_lifecycle -- --submit --seconds 5
+```
+
+The balance check sets `compute_available_balance=true`; a positive balance does not guarantee that the exchange will accept the order's margin requirement. The example checks market status, tick and quantity constraints. The exchange can reject the $0.01 price under its price-band rules; the example reports the rejection and does not choose a different price.
+
+The order uses `post_only` and good-till-canceled with a 60-second expiry as a fallback if the process stops. A post-only order can fill after it rests, and cancellation only removes the remaining quantity; it does not reverse fills. The example attempts cancellation on errors or Ctrl-C, but the expiry is not a guarantee that a cancellation request succeeds.
+
+Only this order's `user_order` envelopes are written as JSONL to `target/margin-order-updates-<unix-ms>.jsonl`. Balances are printed to the console. Existing log files are not overwritten. `--output PATH` changes the log destination, `--subaccount N` selects a cross-margin subaccount from 0-63 (default `0`), and `--seconds N` accepts 1-30 seconds. Use `--help` to inspect the options without submitting an order.
+
+### Transfer one dollar from predictions to perps
+
+`margin_transfer` transfers exactly **$1.00 (10,000 centicents)** from the primary predictions account on shard `0` to the primary perps account. Before a new submission, it prints balances and requires at least $1 available in the source account. It polls an accepted transfer for up to 15 seconds and prints balances after confirmed completion; an accepted request alone is not reported as a completed transfer.
+
+```powershell
+$env:KALSHI_ENV = 'demo' # Use 'production' with production credentials to move real funds.
+$env:KALSHI_API_KEY_ID = 'your-demo-key-id'
+$env:KALSHI_PRIVATE_KEY_PATH = 'C:\path\to\demo-private-key.pem'
+cargo run --example margin_transfer -- --submit
+```
+
+The key needs `read` and `write::transfer` (or the parent `write` scope). A failed perps balance read is reported without blocking the transfer. Kalshi's public overview still describes cross-product API transfers as rollout-gated; the example reports API rejection or unavailable status without substituting another operation.
+
+Before sending, the example saves its client transfer ID in `target/margin-transfer-one-dollar-<environment>.json`, then saves the server transfer ID when available. **Keep this state file and rerun with the same path** to resume or reconcile that transfer after a timeout. A saved server transfer ID resumes status reads without another transfer POST or a new source-balance requirement. It does not generate a new transfer ID and blindly resend another $1, or automatically transfer the funds back. An unresolved/pending result is reported for later inspection.
+
+To deliberately start a separate $1 test, choose a fresh state path:
+
+```powershell
+cargo run --example margin_transfer -- --submit --state target/another-margin-transfer.json
+```
+
 The offline tests use local HTTP/WebSocket servers, schema examples and generated ephemeral signing keys. Optional ignored integration tests select demo explicitly; order submission requires a separate margin opt-in. No authenticated live perps verification is claimed. See [verification results](verification.md).
 
 With margin-enabled demo credentials configured, select only the read-only check:

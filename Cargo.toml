@@ -14,6 +14,14 @@ exclude = ["spec/", "tools/"]
 name = "margin_orderbook_log"
 test = true
 
+[[example]]
+name = "margin_order_lifecycle"
+test = true
+
+[[example]]
+name = "margin_transfer"
+test = true
+
 [dependencies]
 base64 = "0.22"
 futures-util = { version = "0.3", features = ["sink"] }
