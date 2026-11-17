@@ -1,0 +1,45 @@
+[
+  {
+    "name": "marketLifecycleV2",
+    "payload": {
+      "type": "market_lifecycle_v2",
+      "sending_ts_ms": 1792000000150,
+      "sid": 13,
+      "seq": 4,
+      "msg": {
+        "market_ticker": "KXBTCPERP",
+        "event_type": "deactivated",
+        "is_deactivated": true
+      }
+    }
+  },
+  {
+    "name": "marketLifecycleV2",
+    "payload": {
+      "type": "market_lifecycle_v2",
+      "sending_ts_ms": 1792000900150,
+      "sid": 13,
+      "seq": 5,
+      "msg": {
+        "market_ticker": "KXBTCPERP",
+        "event_type": "activated",
+        "is_deactivated": false
+      }
+    }
+  },
+  {
+    "name": "orderGroupUpdates",
+    "payload": {
+      "type": "order_group_updates",
+      "sending_ts_ms": 1733047200123,
+      "sid": 21,
+      "seq": 7,
+      "msg": {
+        "event_type": "limit_updated",
+        "order_group_id": "og_123",
+        "contracts_limit_fp": "150.00",
+        "ts_ms": 1733047200000
+      }
+    }
+  }
+]

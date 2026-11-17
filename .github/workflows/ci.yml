@@ -24,4 +24,4 @@ jobs:
         run: |
           python3 tools/generate.py
           cargo fmt
-          git diff --exit-code -- src docs/rest-coverage.md
+          git diff --exit-code -- src docs/rest-coverage.md docs/margin-rest-coverage.md

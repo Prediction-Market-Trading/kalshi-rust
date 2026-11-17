@@ -1,5 +1,30 @@
 # Verification results
 
+## Perpetuals extension, November 16, 2026
+
+The margin extension adds separate bindings for all 55 operations in the pinned perps trading OpenAPI and all eight WebSocket channels. These are specification-coverage claims. The perps AsyncAPI contains only three JSON server examples; remaining message cases use synthetic schema-based fixtures. No perps response fixture is claimed as a live capture.
+
+The extension adds local HTTP checks for complete signed paths, comma-separated ticker queries, margin order writes, transfers, exit triggers and representative account/risk/funding/FCM calls. Model checks cover nullable schedule references, exact prices above $1, signed and fractional counts, numeric funding rates and future enum values. Local WebSocket checks cover the margin handshake, commands, typed messages, heartbeats and clean closes while retaining the predictions regression suite.
+
+Both new runnable examples are read-only. The ignored perps integration tests select demo explicitly, and an order test requires a separate margin trading opt-in. No credentials were configured during implementation, so authenticated perps enablement, trading, balances, transfers, institutional permissions and live streams remain unverified.
+
+Validation ran on Windows with Rust/Cargo **1.98.1**. Rust 1.95 remains the supported baseline in the unchanged CI matrix; this local run does not establish a new Linux or Rust 1.95 result.
+
+| Extension check | Result |
+| --- | --- |
+| `cargo fmt --check` | Passed |
+| `cargo check --all-targets --offline --locked` | Passed, including both new margin examples |
+| `cargo test --offline --locked` | Passed: 63 automated tests and 9 compiling Rustdoc examples; 4 ignored demo integration tests (2 predictions, 2 margin) |
+| `cargo clippy --all-targets --offline --locked -- -D warnings` | Passed with no warnings |
+| `cargo doc --no-deps --offline --locked` with `RUSTDOCFLAGS=-D warnings` | Passed |
+| Offline generation and formatting | All 10 generated source/coverage artifacts reproduce after formatting (Git-normalized content unchanged); the 4 original predictions generated source files match HEAD |
+| Snapshot provenance | Pinned perps JSON hashes match `spec/perps-provenance.json` |
+| `cargo package --offline --locked --allow-dirty` | Passed; 61-file archive verified by compiling the unpacked SDK |
+
+Package verification reported the existing missing repository/documentation/homepage metadata and that the locked `tokio 1.54.0` is marked yanked in the local crates index. No dependency was added or updated. The original audit below is historical and retains its original toolchain and results.
+
+## Original predictions audit
+
 Completed October 20, 2026 (America/New_York), using `rustc 1.95.0 (59807616e 2026-04-14)` and Cargo 1.95.0 on `aarch64-apple-darwin`. The checked-in Cargo.lock records the dependency resolution. CI is configured for Rust 1.95.0 and stable on Linux; remote CI has not been run from this workspace.
 
 | Required check | Result |

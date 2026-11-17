@@ -20,6 +20,27 @@ For an upstream update, download the authoritative YAML files, convert them to J
 
 Public fixture files in `tests/fixtures/public-*.json` were captured from unauthenticated production reads on the audit date. `ws-official.json` contains the 38 server-message examples from the original AsyncAPI snapshot, with the two orderbook examples updated alongside the clock schemas. These are distinct from authenticated integration evidence.
 
+## Perpetuals trading snapshots
+
+On **November 16, 2026 (America/Chicago)**, the separate perps trading specifications were retrieved and pinned:
+
+- `perps_openapi.json`: [official perps_openapi.yaml](https://docs.kalshi.com/perps_openapi.yaml), OpenAPI 3.0.0, API info version 0.0.1, 55 REST operations.
+- `perps_asyncapi.json`: [official perps_asyncapi.yaml](https://docs.kalshi.com/perps_asyncapi.yaml), AsyncAPI 3.0.0, API info version 2.0.0, eight subscription channels.
+- `perps-provenance.json`: retrieval date/timezone, source URLs, upstream Last-Modified headers, conversion procedure and SHA-256 hashes.
+
+The YAML-to-JSON conversion uses PyYAML 6.0.3 SafeLoader with decimal scalars parsed as `Decimal` and emitted as exact JSON numbers; timestamps remain strings. Pinned JSON uses UTF-8 with LF line endings. PyYAML is needed only to reproduce that upstream conversion, not for offline binding generation or building the crate. Existing predictions snapshots and clock-update provenance remain unchanged.
+
+`tests/fixtures/margin-ws-official.json` contains the three JSON server-message examples published by this perps AsyncAPI snapshot (two market-lifecycle examples and one order-group example). Other margin test messages are synthetic schema-based fixtures, not captured live responses. This distinction is preserved in verification claims.
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Source perps_openapi.yaml | `11a6dbbba299a67f86a01fe6635a93126101e7fb76ad38b87e954e7396a7ba6b` |
+| Pinned perps_openapi.json | `35c35a99c8e253c673566baf0f87a46d4ae8c2f6ba4107c29115728e3e7b8417` |
+| Source perps_asyncapi.yaml | `1ee5ebae59df3ecd95cd99ac63e9d40cb3fb51dd9d783675d24e29f7a4c0422c` |
+| Pinned perps_asyncapi.json | `b6741f74e9f4b894a16a2be490bd50d1e939c882bdbf8693ad08dc9b9149d463` |
+
+The separate `perps_scm_openapi.yaml` describes Klear clearing-member endpoints with different hosts and bearer authentication; it is outside the SDK trading bindings.
+
 ## Orderbook clock update
 
 On **October 27, 2026 (America/Chicago)**, the [official asyncapi.yaml](https://docs.kalshi.com/asyncapi.yaml) was retrieved again, still declaring AsyncAPI 3.0.0 and API info version 2.0.0. Only its orderbook channel description, `msg.clock` schema properties and required-field lists, and the two corresponding message examples were applied to the pinned JSON and websocket fixtures. Other schemas remain at the original snapshot; this is not a full refresh of the downloaded document.

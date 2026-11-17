@@ -3,7 +3,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{sync::Arc, time::Duration};
 use url::Url;
 
-/// Predictions API environment. Credentials are specific to each environment.
+/// API environment for Predictions and Perps. Credentials are specific to each environment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Environment {
     /// Production exchange; requests can trade real funds.
@@ -26,6 +26,13 @@ impl Environment {
             Self::Demo => "wss://external-api-ws.demo.kalshi.co/trade-api/ws/v2",
         }
     }
+    /// Recommended Perps WebSocket URL, including the margin handshake path.
+    pub fn margin_websocket_url(self) -> &'static str {
+        match self {
+            Self::Production => "wss://external-api-margin-ws.kalshi.com/trade-api/ws/v2/margin",
+            Self::Demo => "wss://external-api-margin-ws.demo.kalshi.co/trade-api/ws/v2/margin",
+        }
+    }
 }
 
 /// Cheaply cloneable asynchronous client sharing a connection pool and parsed key.
@@ -36,6 +43,7 @@ pub struct Client {
     pub(crate) credentials: Option<Arc<Credentials>>,
     pub(crate) base_url: Url,
     pub(crate) websocket_url: Url,
+    pub(crate) margin_websocket_url: Url,
     pub(crate) timeout: Duration,
 }
 
@@ -46,6 +54,7 @@ pub struct ClientBuilder {
     credentials: Option<Credentials>,
     base_url: Option<String>,
     websocket_url: Option<String>,
+    margin_websocket_url: Option<String>,
     timeout: Duration,
 }
 impl ClientBuilder {
@@ -60,9 +69,16 @@ impl ClientBuilder {
         self.base_url = Some(url.into());
         self
     }
-    /// Override the complete WebSocket URL for a proxy or mock server.
+    /// Override the complete Predictions WebSocket URL for a proxy or mock server.
     pub fn websocket_url(mut self, url: impl Into<String>) -> Self {
         self.websocket_url = Some(url.into());
+        self
+    }
+    /// Override the complete Perps WebSocket URL independently of Predictions.
+    /// May also select Kalshi's low-latency margin user-stream host for `fill` and `user_orders`.
+    /// The caller controls the destination receiving signed authentication headers.
+    pub fn margin_websocket_url(mut self, url: impl Into<String>) -> Self {
+        self.margin_websocket_url = Some(url.into());
         self
     }
     /// Set REST request and WebSocket handshake timeouts (default 30 seconds).
@@ -98,6 +114,12 @@ impl ClientBuilder {
                 .unwrap_or(self.environment.websocket_url()),
             &["ws", "wss"],
         )?;
+        let margin_websocket_url = parse(
+            self.margin_websocket_url
+                .as_deref()
+                .unwrap_or(self.environment.margin_websocket_url()),
+            &["ws", "wss"],
+        )?;
         let http = reqwest::Client::builder()
             .timeout(self.timeout)
             .connect_timeout(self.timeout)
@@ -109,6 +131,7 @@ impl ClientBuilder {
             credentials: self.credentials.map(Arc::new),
             base_url,
             websocket_url,
+            margin_websocket_url,
             timeout: self.timeout,
         })
     }
@@ -125,8 +148,51 @@ impl Client {
             credentials: None,
             base_url: None,
             websocket_url: None,
+            margin_websocket_url: None,
             timeout: Duration::from_secs(30),
         }
+    }
+    /// Access the Perps trading API, sharing this client's credentials and HTTP pool.
+    pub fn margin(&self) -> crate::margin::Margin<'_> {
+        crate::margin::Margin { client: self }
+    }
+
+    // OpenAPI form arrays with explode=false are one comma-separated query value.
+    // Adapt only the named fields; the shared request transport retains Predictions' repeated keys.
+    pub(crate) async fn request_with_csv_query<
+        T: DeserializeOwned,
+        Q: Serialize + ?Sized,
+        B: Serialize + ?Sized,
+    >(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        query: Option<&Q>,
+        body: Option<&B>,
+        auth_required: bool,
+        csv_fields: &[&str],
+    ) -> Result<T> {
+        let mut query = query.map(serde_json::to_value).transpose()?;
+        if let Some(query) = query.as_mut() {
+            let object = query
+                .as_object_mut()
+                .ok_or_else(|| Error::Config("query must be an object".into()))?;
+            for field in csv_fields {
+                if let Some(serde_json::Value::Array(values)) = object.get_mut(*field) {
+                    let joined = values
+                        .iter()
+                        .map(|value| match value {
+                            serde_json::Value::String(value) => value.clone(),
+                            _ => value.to_string(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    object.insert((*field).into(), serde_json::Value::String(joined));
+                }
+            }
+        }
+        self.request(method, path, query.as_ref(), body, auth_required)
+            .await
     }
     pub(crate) async fn request<
         T: DeserializeOwned,
@@ -227,6 +293,62 @@ pub(crate) fn segment(value: &str) -> Result<String> {
 mod tests {
     use super::segment;
     use crate::Error;
+
+    #[test]
+    fn margin_and_predictions_websocket_destinations_are_independent() {
+        use super::{Client, Environment};
+        for (environment, margin_url) in [
+            (
+                Environment::Demo,
+                "wss://external-api-margin-ws.demo.kalshi.co/trade-api/ws/v2/margin",
+            ),
+            (
+                Environment::Production,
+                "wss://external-api-margin-ws.kalshi.com/trade-api/ws/v2/margin",
+            ),
+        ] {
+            let client = Client::new(environment).unwrap();
+            assert_eq!(client.margin_websocket_url.as_str(), margin_url);
+            assert_eq!(client.websocket_url.as_str(), environment.websocket_url());
+            let client = Client::builder(environment)
+                .websocket_url("ws://localhost:1234/predictions")
+                .build()
+                .unwrap();
+            assert_eq!(client.margin_websocket_url.as_str(), margin_url);
+            let client = Client::builder(environment)
+                .margin_websocket_url("ws://localhost:5678/margin")
+                .build()
+                .unwrap();
+            assert_eq!(
+                client.margin_websocket_url.as_str(),
+                "ws://localhost:5678/margin"
+            );
+            assert_eq!(client.websocket_url.as_str(), environment.websocket_url());
+        }
+    }
+
+    #[test]
+    fn margin_websocket_override_requires_a_supported_url_without_embedded_credentials() {
+        use super::{Client, Environment};
+        for url in [
+            "not a URL",
+            "https://example.com/margin",
+            "ws:///",
+            "wss://user:password@example.com/margin",
+            "wss://example.com/margin?key=value",
+            "wss://example.com/margin#fragment",
+        ] {
+            assert!(
+                matches!(
+                    Client::builder(Environment::Demo)
+                        .margin_websocket_url(url)
+                        .build(),
+                    Err(Error::Config(_))
+                ),
+                "{url}"
+            );
+        }
+    }
 
     #[test]
     fn segments_preserve_unreserved_characters() {
