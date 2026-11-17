@@ -6,9 +6,11 @@ mod auth;
 mod client;
 mod error;
 mod fixed;
+pub mod margin;
 pub mod models;
 mod rest;
 pub mod websocket;
+mod websocket_transport;
 
 pub use auth::Credentials;
 pub use client::{Client, ClientBuilder, Environment};

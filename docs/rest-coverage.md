@@ -123,4 +123,4 @@ Generated from the pinned official OpenAPI 3.34.0 snapshot, retrieved October 20
 | `get_historical_markets` | GET | `/historical/markets` | Optional |
 | `get_historical_market` | GET | `/historical/markets/{ticker}` | Optional |
 
-Perps, FIX, external feeds, and CF Benchmarks REST passthrough use separate specifications/transports and are not covered. Legacy order write paths absent from this snapshot are deliberately not exposed.
+Perps REST coverage is documented in [margin-rest-coverage.md](margin-rest-coverage.md). FIX, external feeds, and CF Benchmarks REST passthrough use separate specifications/transports and are not covered. Legacy order write paths absent from this snapshot are deliberately not exposed.

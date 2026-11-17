@@ -1,0 +1,21 @@
+{
+  "retrieved_on": "2026-11-16",
+  "timezone": "America/Chicago",
+  "conversion": "PyYAML 6.0.3 SafeLoader; decimal scalars decoded as Decimal and emitted as exact JSON numbers; timestamps retained as strings; UTF-8 LF",
+  "artifacts": {
+    "perps_openapi": {
+      "source": "https://docs.kalshi.com/perps_openapi.yaml",
+      "source_sha256": "11a6dbbba299a67f86a01fe6635a93126101e7fb76ad38b87e954e7396a7ba6b",
+      "json_sha256": "35c35a99c8e253c673566baf0f87a46d4ae8c2f6ba4107c29115728e3e7b8417",
+      "last_modified": "Mon, 16 Nov 2026 23:20:28 GMT",
+      "api_version": "0.0.1"
+    },
+    "perps_asyncapi": {
+      "source": "https://docs.kalshi.com/perps_asyncapi.yaml",
+      "source_sha256": "1ee5ebae59df3ecd95cd99ac63e9d40cb3fb51dd9d783675d24e29f7a4c0422c",
+      "json_sha256": "b6741f74e9f4b894a16a2be490bd50d1e939c882bdbf8693ad08dc9b9149d463",
+      "last_modified": "Mon, 16 Nov 2026 18:55:49 GMT",
+      "api_version": "2.0.0"
+    }
+  }
+}

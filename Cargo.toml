@@ -4,11 +4,23 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.95"
 license = "MIT"
-description = "Asynchronous Rust SDK for the Kalshi Predictions REST and WebSocket APIs"
+description = "Asynchronous Rust SDK for Kalshi Predictions and Perpetuals REST and WebSocket APIs"
 readme = "README.md"
-keywords = ["kalshi", "sdk", "prediction-markets", "websocket"]
+keywords = ["kalshi", "sdk", "prediction-markets", "perpetuals", "websocket"]
 categories = ["api-bindings", "asynchronous"]
 exclude = ["spec/", "tools/"]
+
+[[example]]
+name = "margin_orderbook_log"
+test = true
+
+[[example]]
+name = "margin_order_lifecycle"
+test = true
+
+[[example]]
+name = "margin_transfer"
+test = true
 
 [dependencies]
 base64 = "0.22"

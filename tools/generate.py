@@ -28,17 +28,23 @@ def doc(s, indent=''):
     return '\n'.join(indent + '/// ' + line for line in s.splitlines()) + '\n'
 
 class Models:
-    def __init__(self, spec, ws=False):
+    def __init__(self, spec, ws=False, margin=False):
         self.schemas = spec['components']['schemas']
         self.ws = ws
+        self.margin = margin
         self.defs = {}
         self.busy = set()
 
     def refname(self, ref):
         return pascal(ref.rsplit('/', 1)[-1])
 
-    def nullable(self, s):
-        return s.get('nullable', False) or isinstance(s.get('type'), list) and 'null' in s['type']
+    def nullable(self, s, seen=None):
+        if s.get('nullable', False) or isinstance(s.get('type'), list) and 'null' in s['type']:
+            return True
+        seen = set() if seen is None else seen
+        if '$ref' in s and s['$ref'] not in seen:
+            return self.nullable(self.schemas[s['$ref'].rsplit('/', 1)[-1]], seen | {s['$ref']})
+        return any(self.nullable(v, seen) for v in s.get('allOf', []))
 
     def typ(self, s, name, field=''):
         if '$ref' in s:
@@ -68,6 +74,8 @@ class Models:
                 return '(FixedPointDollars, FixedPointCount)'
             return 'Vec<' + self.typ(s['items'], name + 'Item', field) + '>'
         if self.ws and t == 'string':
+            if self.margin and ('fixed_point_count' in s.get('x-rust-serialize-with', '') or s.get('x-rust-type') in {'common::types::Amount', 'common::types::Position'}):
+                return 'FixedPointCount'
             if field.endswith('_fp') or field in {'delta_fp', 'post_position_fp'}:
                 return 'FixedPointCount'
             if field.endswith('_dollars') or field == 'fee_cost' or s.get('x-rust-type') in {'common::types::Price', 'common::types::Value'}:
@@ -140,98 +148,131 @@ class Models:
                 'use serde::{Deserialize, Serialize};\n'
                 'pub use crate::{FixedPointCount, FixedPointDollars};\n\n' + '\n'.join(self.defs.values()))
 
-s = json.loads((ROOT / 'spec/openapi.json').read_text())
-m = Models(s)
-for n,v in m.schemas.items():
-    if n not in {'FixedPointDollars','FixedPointCount'}: m.emit(pascal(n),v)
+def generate_rest(spec_file, out_dir, margin=False):
+    s = json.loads((ROOT / spec_file).read_text(encoding='utf-8'))
+    m = Models(s, margin=margin)
+    for n,v in m.schemas.items():
+        if n not in {'FixedPointDollars','FixedPointCount'}: m.emit(pascal(n),v)
 
-def resolve(x):
-    if '$ref' not in x: return x
-    value = s
-    for part in x['$ref'][2:].split('/'): value=value[part]
-    return value
+    def resolve(x):
+        if '$ref' not in x: return x
+        value = s
+        for part in x['$ref'][2:].split('/'): value=value[part]
+        return value
 
-methods=[]; coverage=[]
-for path, item in s['paths'].items():
-    for verb, op in item.items():
-        if verb not in {'get','post','put','delete','patch'}: continue
-        oid=op['operationId']; name=snake(oid); args=[]; params=[]; pathvars=[]
-        for par in item.get('parameters',[]) + op.get('parameters',[]):
-            par=resolve(par)
-            if par['in']=='path':
-                f=snake(par['name']);args.append(f'{f}: &str'); pathvars.append((par['name'],f))
-            elif par['in']=='query':params.append(par)
-            else: raise ValueError(par)
-        if params:
-            qname=oid+'Query'
-            m.emit(qname,{'type':'object','description':f'Query parameters for `{name}`. Defaults omit optional fields; required fields must be supplied.','properties':{p['name']:{**p['schema'],'description':p.get('description','')} for p in params},'required':[p['name'] for p in params if p.get('required')]})
-            args.append(f'query: &{qname}');q='Some(query)'
-        else:q='None::<&()>'
-        body=op.get('requestBody')
-        if body:
-            body=resolve(body);schema=body['content']['application/json']['schema'];btype=m.typ(schema,oid+'Body');args.append(f'body: &{btype}');b='Some(body)'
-        else:b='None::<&()>'
-        response=next(resolve(v) for k,v in op['responses'].items() if str(k).startswith('2'))
-        schema=response.get('content',{}).get('application/json',{}).get('schema')
-        ret=m.typ(schema,oid+'Response') if schema else '()'
-        auth=bool(op.get('security',s.get('security')))
-        d=doc(op.get('summary',oid)+'\n\n'+op.get('description','')+f'\n\n`{verb.upper()} {path}`. '+('Requires credentials.' if auth else 'Public; signed when credentials are configured.'),'    ')
-        args=', '.join(['&self']+args)
-        if pathvars:
-            fmtpath=path
-            fmtargs=[]
-            for raw,f in pathvars:
-                fmtpath=fmtpath.replace('{'+raw+'}','{}');fmtargs.append('crate::client::segment('+f+')?')
-            line='let path = format!('+json.dumps(fmtpath)+', '+', '.join(fmtargs)+');'
-        else:line='let path = '+json.dumps(path)+';'
-        patharg = '&path' if pathvars else 'path'
-        d+=f'    pub async fn {name}({args}) -> crate::Result<{ret}> {{\n        {line}\n        self.request(reqwest::Method::{verb.upper()}, {patharg}, {q}, {b}, {str(auth).lower()}).await\n    }}\n'
-        methods.append(d);coverage.append((name,verb.upper(),path,auth))
-(ROOT/'src/models.rs').write_text(m.render())
-(ROOT/'src/rest.rs').write_text('// @generated by tools/generate.py\nuse crate::{Client, models::*};\nimpl Client {\n'+''.join(methods)+'}\n')
-(ROOT/'docs/rest-coverage.md').write_text('# Predictions REST coverage\n\nGenerated from the pinned official OpenAPI '+s['info']['version']+' snapshot, retrieved October 20, 2026. All '+str(len(coverage))+' operations in that snapshot have typed request/query/response bindings and executable HTTP implementations. This is specification coverage, not a claim of live account verification. Server-specific or undocumented endpoints are outside this table.\n\n| Method | Verb | Path | Authentication |\n| --- | --- | --- | --- |\n'+''.join(f'| `{n}` | {v} | `{p}` | '+('Required' if a else 'Optional')+' |\n' for n,v,p,a in coverage)+'\nPerps, FIX, external feeds, and CF Benchmarks REST passthrough use separate specifications/transports and are not covered. Legacy order write paths absent from this snapshot are deliberately not exposed.\n')
-a=json.loads((ROOT/'spec/asyncapi.json').read_text());w=Models(a,ws=True)
-for n,v in w.schemas.items():w.emit(pascal(n),v)
-(ROOT/'src/websocket_models.rs').write_text(w.render())
-print(f'Generated {len(coverage)} REST operations, {len(m.defs)} REST model definitions, {len(w.defs)} WebSocket model definitions.')
+    methods=[]; coverage=[]
+    for path, item in s['paths'].items():
+        for verb, op in item.items():
+            if verb not in {'get','post','put','delete','patch'}: continue
+            oid=op['operationId']; name=snake(oid.replace('Margin', '').replace('Perps', '') if margin else oid); args=[]; params=[]; pathvars=[]
+            for par in item.get('parameters',[]) + op.get('parameters',[]):
+                par=resolve(par)
+                if par['in']=='path':
+                    f=snake(par['name']);args.append(f'{f}: &str'); pathvars.append((par['name'],f))
+                elif par['in']=='query':params.append(par)
+                else: raise ValueError(par)
+            if params:
+                qname=oid+'Query'
+                m.emit(qname,{'type':'object','description':f'Query parameters for `{name}`. Defaults omit optional fields; required fields must be supplied.','properties':{p['name']:{**p['schema'],'description':p.get('description','')} for p in params},'required':[p['name'] for p in params if p.get('required')]})
+                args.append(f'query: &{qname}');q='Some(query)'
+            else:q='None::<&()>'
+            csv_fields = []
+            for par in params:
+                if par.get('style', 'form') != 'form':
+                    raise ValueError(f'Unsupported query style in {oid}: {par}')
+                if par['schema'].get('type') == 'array' and not par.get('explode', True):
+                    csv_fields.append(par['name'])
+            body=op.get('requestBody')
+            if body:
+                body=resolve(body);schema=body['content']['application/json']['schema'];btype=m.typ(schema,oid+'Body');args.append(f'body: &{btype}');b='Some(body)'
+            else:b='None::<&()>'
+            response=next(resolve(v) for k,v in op['responses'].items() if str(k).startswith('2'))
+            schema=response.get('content',{}).get('application/json',{}).get('schema')
+            ret=m.typ(schema,oid+'Response') if schema else '()'
+            auth=bool(op.get('security',s.get('security')))
+            d=doc(op.get('summary',oid)+'\n\n'+op.get('description','')+f'\n\n`{verb.upper()} {path}`. '+('Requires credentials.' if auth else 'Public; signed when credentials are configured.'),'    ')
+            args=', '.join(['&self']+args)
+            if pathvars:
+                fmtpath=path
+                fmtargs=[]
+                for raw,f in pathvars:
+                    fmtpath=fmtpath.replace('{'+raw+'}','{}');fmtargs.append('crate::client::segment('+f+')?')
+                line='let path = format!('+json.dumps(fmtpath)+', '+', '.join(fmtargs)+');'
+            else:line='let path = '+json.dumps(path)+';'
+            patharg = '&path' if pathvars else 'path'
+            receiver = 'self.client' if margin else 'self'
+            request = receiver + ('.request_with_csv_query' if csv_fields else '.request')
+            extra = ', &[' + ', '.join(json.dumps(f) for f in csv_fields) + ']' if csv_fields else ''
+            d+=f'    pub async fn {name}({args}) -> crate::Result<{ret}> {{\n        {line}\n        {request}(reqwest::Method::{verb.upper()}, {patharg}, {q}, {b}, {str(auth).lower()}{extra}).await\n    }}\n'
+            methods.append(d);coverage.append((name,verb.upper(),path,auth))
+    (out_dir/'models.rs').write_text(m.render(), encoding='utf-8')
+    receiver_import = "use super::{Margin, models::*};\nimpl Margin<'_> {\n" if margin else 'use crate::{Client, models::*};\nimpl Client {\n'
+    (out_dir/'rest.rs').write_text('// @generated by tools/generate.py\n'+receiver_import+''.join(methods)+'}\n', encoding='utf-8')
+    title = 'Margin' if margin else 'Predictions'
+    retrieved = json.loads((ROOT/'spec/perps-provenance.json').read_text(encoding='utf-8'))['retrieved_on'] if margin else 'October 20, 2026'
+    coverage_path = ROOT / ('docs/margin-rest-coverage.md' if margin else 'docs/rest-coverage.md')
+    coverage_path.write_text('# '+title+' REST coverage\n\nGenerated from the pinned official OpenAPI '+s['info']['version']+' snapshot, retrieved '+retrieved+'. All '+str(len(coverage))+' operations in that snapshot have typed request/query/response bindings and executable HTTP implementations. This is specification coverage, not a claim of live account verification. Server-specific or undocumented endpoints are outside this table.\n\n| Method | Verb | Path | Authentication |\n| --- | --- | --- | --- |\n'+''.join(f'| `{n}` | {v} | `{p}` | '+('Required' if a else 'Optional')+' |\n' for n,v,p,a in coverage)+('\nCall these methods through `client.margin()`. Klear clearing-member APIs and FIX are separate surfaces and are not covered.\n' if margin else '\nPerps REST coverage is documented in [margin-rest-coverage.md](margin-rest-coverage.md). FIX, external feeds, and CF Benchmarks REST passthrough use separate specifications/transports and are not covered. Legacy order write paths absent from this snapshot are deliberately not exposed.\n'), encoding='utf-8', newline='\n')
+    return len(coverage), len(m.defs)
 
-# Typed dispatch for server envelopes sharing the same top-level discriminator.
-variants=[]
-for name, schema in a['components']['schemas'].items():
-    tag=schema.get('properties',{}).get('type',{}).get('const')
-    if not tag or name.endswith('CommandPayload') or name == 'listSubscriptionsResponsePayload': continue
-    n=name.removesuffix('Payload'); n=n[0].upper()+n[1:]
-    n={'SubscribedResponse':'Subscribed','UnsubscribedResponse':'Unsubscribed','OkResponse':'Ok','ErrorResponse':'Error'}.get(n,n)
-    variants.append((tag,n,pascal(name)))
-d='// @generated by tools/generate.py\nuse super::models;\nuse crate::{Result, Error};\n'
-d+='/// Typed server responses. Unknown message types retain their complete JSON envelope.\n#[derive(Clone, Debug)]\npub enum Message {\n'
-for tag,n,ty in variants:d+=f'    /// Wire message `{tag}`.\n    {n}(Box<models::{ty}>),\n'
-d+='    /// Active subscriptions returned by list_subscriptions.\n    Subscriptions(Box<models::ListSubscriptionsResponsePayload>),\n    /// A future or undocumented message type.\n    Unknown(serde_json::Value),\n}\n'
-d+='''impl Message {
-    /// Decode a JSON text message. Malformed known messages produce decoding errors.
-    pub fn from_json(text: &str) -> Result<Self> { Self::from_slice(text.as_bytes()) }
-    /// Decode a JSON byte message.
-    pub fn from_slice(bytes: &[u8]) -> Result<Self> {
-        let value: serde_json::Value = serde_json::from_slice(bytes)?;
-        if !value.is_object() || !value.get("type").is_some_and(|v| v.is_string()) {
-            return Err(Error::Config("WebSocket envelope requires a string type".into()));
-        }
-        if value["type"] == "ok" && value.get("msg").is_some_and(|m| m.is_array()) {
-            return Ok(Self::Subscriptions(Box::new(serde_json::from_value(value)?)));
-        }
-        if value["type"] == "ok" && value["msg"].get("index_ids").is_some() {
-            return Ok(Self::SubscribedIndicesResponse(Box::new(serde_json::from_value(value)?)));
-        }
-        if value["type"] == "ok" && value["msg"].get("underlying_tickers").is_some() {
-            return Ok(Self::SubscribedUnderlyingsResponse(Box::new(serde_json::from_value(value)?)));
-        }
-        if value["type"] == "market_lifecycle_v2" && value["msg"]["event_type"] == "metadata_updated" {
-            return Ok(Self::MarketMetadataUpdated(Box::new(serde_json::from_value(value)?)));
-        }
-        Ok(match value["type"].as_str().unwrap_or("") {
-'''
-for tag,n,ty in variants:
-    if n in ['SubscribedIndicesResponse','SubscribedUnderlyingsResponse','MarketMetadataUpdated']:continue
-    d+=f'            "{tag}" => Self::{n}(Box::new(serde_json::from_value(value)?)),\n'
-d+='            _ => Self::Unknown(value),\n        })\n    }\n}\n'
-(ROOT/'src/websocket_messages.rs').write_text(d)
+def generate_websocket(spec_file, out_dir, margin=False):
+    a=json.loads((ROOT/spec_file).read_text(encoding='utf-8'));w=Models(a,ws=True,margin=margin)
+    for n,v in w.schemas.items():w.emit(pascal(n),v)
+    (out_dir/'websocket_models.rs').write_text(w.render(), encoding='utf-8')
+
+    # Typed dispatch for server envelopes sharing the same top-level discriminator.
+    variants=[]
+    for name, schema in a['components']['schemas'].items():
+        tag=schema.get('properties',{}).get('type',{}).get('const')
+        if not tag or name.endswith('CommandPayload') or name == 'listSubscriptionsResponsePayload': continue
+        n=name.removesuffix('Payload'); n=n[0].upper()+n[1:]
+        if margin: n=n.removeprefix('Margin')
+        n={'SubscribedResponse':'Subscribed','UnsubscribedResponse':'Unsubscribed','OkResponse':'Ok','ErrorResponse':'Error'}.get(n,n)
+        variants.append((tag,n,pascal(name)))
+    d='// @generated by tools/generate.py\nuse super::models;\nuse crate::{Result, Error};\n'
+    d+='/// Typed server responses. Unknown message types retain their complete JSON envelope.\n#[derive(Clone, Debug)]\npub enum Message {\n'
+    for tag,n,ty in variants:d+=f'    /// Wire message `{tag}`.\n    {n}(Box<models::{ty}>),\n'
+    d+='    /// Active subscriptions returned by list_subscriptions.\n    Subscriptions(Box<models::ListSubscriptionsResponsePayload>),\n    /// A future or undocumented message type.\n    Unknown(serde_json::Value),\n}\n'
+    d+='''impl Message {
+        /// Decode a JSON text message. Malformed known messages produce decoding errors.
+        pub fn from_json(text: &str) -> Result<Self> { Self::from_slice(text.as_bytes()) }
+        /// Decode a JSON byte message.
+        pub fn from_slice(bytes: &[u8]) -> Result<Self> {
+            let value: serde_json::Value = serde_json::from_slice(bytes)?;
+            if !value.is_object() || !value.get("type").is_some_and(|v| v.is_string()) {
+                return Err(Error::Config("WebSocket envelope requires a string type".into()));
+            }
+            if value["type"] == "ok" && value.get("msg").is_some_and(|m| m.is_array()) {
+                return Ok(Self::Subscriptions(Box::new(serde_json::from_value(value)?)));
+            }
+    '''
+    if not margin:
+        d+='''        if value["type"] == "ok" && value["msg"].get("index_ids").is_some() {
+                return Ok(Self::SubscribedIndicesResponse(Box::new(serde_json::from_value(value)?)));
+            }
+            if value["type"] == "ok" && value["msg"].get("underlying_tickers").is_some() {
+                return Ok(Self::SubscribedUnderlyingsResponse(Box::new(serde_json::from_value(value)?)));
+            }
+            if value["type"] == "market_lifecycle_v2" && value["msg"]["event_type"] == "metadata_updated" {
+                return Ok(Self::MarketMetadataUpdated(Box::new(serde_json::from_value(value)?)));
+            }
+    '''
+    d+='        Ok(match value["type"].as_str().unwrap_or("") {\n'
+    for tag,n,ty in variants:
+        if n in ['SubscribedIndicesResponse','SubscribedUnderlyingsResponse','MarketMetadataUpdated']:continue
+        d+=f'            "{tag}" => Self::{n}(Box::new(serde_json::from_value(value)?)),\n'
+    d+='            _ => Self::Unknown(value),\n        })\n    }\n}\n'
+    (out_dir/'websocket_messages.rs').write_text(d, encoding='utf-8')
+    return len(w.defs)
+
+
+def main():
+    for margin in [False, True]:
+        prefix = 'perps_' if margin else ''
+        out_dir = ROOT / ('src/margin' if margin else 'src')
+        out_dir.mkdir(parents=True, exist_ok=True)
+        operations, models = generate_rest('spec/'+prefix+'openapi.json', out_dir, margin)
+        messages = generate_websocket('spec/'+prefix+'asyncapi.json', out_dir, margin)
+        print(f'Generated {"margin" if margin else "predictions"}: {operations} REST operations, {models} REST models, {messages} WebSocket models.')
+
+if __name__ == '__main__':
+    main()

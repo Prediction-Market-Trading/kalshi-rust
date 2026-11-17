@@ -1,8 +1,8 @@
 # Kalshi Rust SDK
 
-An independent async Rust SDK for Kalshi's **Predictions** REST and WebSocket APIs. Query markets, trade, inspect your account, and consume typed streams. There is no trading engine, strategy layer, portfolio accounting, or local orderbook implementation.
+An independent async Rust SDK for Kalshi's **Predictions and Perpetuals** REST and WebSocket APIs. Query markets, trade, inspect your account, and consume typed streams. There is no trading engine, strategy layer, portfolio accounting, or local orderbook implementation.
 
-This is an unpublished `0.1.0` crate named `kalshi-sdk-rs` (Rust import: `kalshi_sdk_rs`). It contains typed bindings for all **118 operations in the pinned official Predictions OpenAPI 3.34.0 snapshot**, retrieved October 20, 2026, and the Predictions channels in AsyncAPI 2.0.0. Specification coverage does not imply live verification of every endpoint. Public market-data calls have been exercised against Kalshi; authenticated live calls need your credentials.
+This is an unpublished `0.1.0` crate named `kalshi-sdk-rs` (Rust import: `kalshi_sdk_rs`). It contains typed bindings for all **118 operations in the pinned official Predictions OpenAPI 3.34.0 snapshot**, retrieved October 20, 2026, and the Predictions channels in AsyncAPI 2.0.0. The margin API adds all **55 operations in the pinned Perps OpenAPI 0.0.1 snapshot**, retrieved November 16, 2026, and all eight channels in Perps AsyncAPI 2.0.0. Specification coverage does not imply live verification of every endpoint. Public predictions market-data calls have been exercised against Kalshi; authenticated live calls need your credentials.
 
 ## Install
 
@@ -29,9 +29,35 @@ Choose an environment explicitly; demo and production credentials are separate. 
 
 The older `api.elections.kalshi.com` and `demo-api.kalshi.co` hosts remain supported by Kalshi and can be selected with builder URL overrides. Predictions still uses the `/trade-api/v2` URL prefix; the OpenAPI package version `3.34.0` is a separate version number.
 
-The read-only public examples use production market data. The authenticated `market_stream` example selects Demo (the default) or production via `KALSHI_ENV`; the other authenticated examples and integration tests use **Demo**. The library itself permits production trading when you explicitly choose `Environment::Production`.
+The existing read-only public predictions examples use production market data. The authenticated `market_stream`, `margin_account`, `margin_stream`, `margin_orderbook_log`, `margin_order_lifecycle` and `margin_transfer` examples select Demo (the default) or production via `KALSHI_ENV`; other authenticated examples and all integration tests use **Demo**. The library itself permits production trading when you explicitly choose `Environment::Production`.
 
-## Public market data
+## Perpetuals (margin)
+
+Use `client.margin()` for perpetuals. It shares the client's REST root, credentials, HTTP pool and timeout, with separate wire types under `margin::models` and `margin::websocket`:
+
+```rust,no_run
+use kalshi_sdk_rs::{Client, Environment};
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let client = Client::new(Environment::Demo)?;
+let page = client.margin().get_markets(&Default::default()).await?;
+for market in page.markets {
+    println!("{}: {}", market.ticker, market.title);
+}
+# Ok(()) }
+```
+
+Margin methods omit `Margin` from upstream operation names: `get_markets`, `create_order`, `get_funding_rate_estimate` and `set_cross_exit_trigger`, for example. `get_account_api_limits` reads perps limits. Models retain their upstream names, such as `margin::models::CreateMarginOrderRequest`. Prediction methods on `Client` are unchanged. See [every margin REST method](docs/margin-rest-coverage.md) and the [margin usage guide](docs/margin.md).
+
+| Environment | Perps WebSocket URL |
+| --- | --- |
+| `Environment::Demo` | `wss://external-api-margin-ws.demo.kalshi.co/trade-api/ws/v2/margin` |
+| `Environment::Production` | `wss://external-api-margin-ws.kalshi.com/trade-api/ws/v2/margin` |
+
+Connect with `client.margin().connect_websocket().await?`. The builder's `margin_websocket_url(...)` override is independent of the predictions `websocket_url(...)` override. Both products use the REST roots above; the SDK uses each documented path, including perps operations outside `/margin`. Perps access is rolling out by account; inspect `client.margin().get_enabled().await?` before account or trading calls. [Official perps overview](https://docs.kalshi.com/margin).
+
+Perps books contain **bids and asks**, and perps streams use millisecond timestamps without the predictions exchange clock. Use perps models and subscription parameters for these streams. Funding, risk, fee tiers, subaccounts, transfers, corporate actions, exit triggers and the published FCM trading endpoints are included. Market tick rules, whole-contract restrictions, margin requirements and endpoint permissions remain exchange-validated.
+
+## Predictions public market data
 
 No credentials are required for public endpoints. The following complete program lists open markets:
 
@@ -90,11 +116,11 @@ Signing is Base64 of a signature over `timestamp_ms + UPPERCASE_METHOD + full_pa
 
 `FixedPointDollars` and `FixedPointCount` wrap exact `rust_decimal::Decimal` values and always serialize as JSON **strings**. Parse from decimal text: `"0.1234".parse::<FixedPointDollars>()?` or `"2.50".parse::<FixedPointCount>()?`. Dollar responses allow up to six decimal places, quantities up to two; negative quantities support positions and deltas. `decimal()` exposes the exact value for checked arithmetic. Scientific notation, JSON numeric values, invalid syntax and excess precision are rejected.
 
-Request prices generally require two to four decimal places and must respect each market's `price_ranges` and `price_level_structure`. Fixed-point parsing checks representation, not market tick validity, quantity positivity or business rules. Other JSON numeric fields (for example strikes and weather measurements) use `serde_json::Number` with arbitrary precision, not `f64`. Timestamps retain the documented wire representation: strings, Unix seconds or milliseconds; see each field's Rustdoc.
+Request prices generally require two to four decimal places and must respect market ticks. Predictions expose `price_ranges` and `price_level_structure`; perps expose `tick_size`. Fixed-point parsing checks representation, not market tick validity, quantity positivity or business rules. Other JSON numeric fields (for example strikes and weather measurements) use `serde_json::Number` with arbitrary precision, not `f64`. Timestamps retain the documented wire representation: strings, Unix seconds or milliseconds; see each field's Rustdoc.
 
-Requests and responses use public structs under `models`. Optional fields are omitted when `None`. Required response fields are checked during deserialization. Deprecated fields are optional to tolerate their removal. String enums retain future values as `Unknown(String)`. Extensible, schema-free metadata uses maps/JSON where the official spec leaves its shape undefined. **`Default` provides construction convenience; it does not create a complete or valid order.** Supply all documented required fields.
+Requests and responses use public structs under `models` for predictions and `margin::models` for perps. Optional fields are omitted when `None`. Required response fields are checked during deserialization. Deprecated fields are optional to tolerate their removal. String enums retain future values as `Unknown(String)`. Extensible, schema-free metadata uses maps/JSON where the official spec leaves its shape undefined. **`Default` provides construction convenience; it does not create a complete or valid order.** Supply all documented required fields.
 
-## Place, cancel and amend orders
+## Predictions order lifecycle
 
 Order writes use the current `/portfolio/events/orders` endpoints, **`bid`/`ask`**, and fixed-point `price`/`count` strings. Reads such as `get_orders` and `get_order` still use `/portfolio/orders` as specified by Kalshi. Legacy order-write paths are not exposed.
 
@@ -138,7 +164,7 @@ cargo run --example demo_order
 
 Post-only orders can still fill after resting. Use a suitable demo market and price. The library's ordinary order methods do not require the example's opt-in variable; that guard belongs to the example and tests.
 
-## Account and portfolio
+## Predictions account and portfolio
 
 ```rust,no_run
 use kalshi_sdk_rs::{Client, Credentials, Environment, models::*};
@@ -156,13 +182,13 @@ let fills = client.get_fills(&GetFillsQuery::default()).await?;
 
 For open orders, set `GetOrdersQuery.status` to `Some("resting".into())`. Settlements, deposits, withdrawals, subaccounts, transfers and API limits have their own typed methods. Some institutional operations require additional permissions.
 
-## Pagination and history
+## Predictions pagination and history
 
 Methods return one page. Pass `response.next_cursor()` to the next query's `cursor` and stop on `None`. Both absent and empty cursors mean completion. The `list_markets` example demonstrates a bounded pagination loop. The SDK does not eagerly fetch all data or hide extra requests.
 
 Recent endpoints omit data older than the exchange's historical cutoff. Use `get_historical_cutoff` to discover the boundary, then `get_trades_historical`, `get_fills_historical`, `get_historical_orders`, `get_historical_positions`, `get_historical_markets`, `get_historical_market` or `get_market_candlesticks_historical` as appropriate. The SDK leaves merging recent/historical pages and choosing time ranges to the caller.
 
-## WebSockets
+## Predictions WebSockets
 
 All Predictions WebSocket handshakes need credentials. Subscribe with a caller-assigned command `id`; use the `sid` from the server's `subscribed` acknowledgment to manage that subscription.
 
@@ -242,6 +268,11 @@ The SDK sends each request once. It has no automatic retries or rate limiter. Ha
 | `cargo run --example market_stream` | Ticker, trades, orderbook snapshots/deltas with clocks | Demo by default; production via `KALSHI_ENV` |
 | `cargo run --example user_stream` | Demo order and fill updates | Demo |
 | `cargo run --example public_smoke` | Read-only public compatibility probe | None |
+| `cargo run --example margin_account` | Perps enablement, markets and account balance | Demo by default; production via `KALSHI_ENV` |
+| `cargo run --example margin_stream` | Perps ticker, trades and bid/ask orderbook updates | Demo by default; production via `KALSHI_ENV` |
+| `cargo run --example margin_orderbook_log -- --seconds 5` | Perps orderbook snapshots/updates saved as JSONL for five seconds; [configuration](docs/margin.md#record-a-short-orderbook-feed) | Demo by default; production via `KALSHI_ENV` |
+| `cargo run --example margin_order_lifecycle -- --submit --seconds 5` | Print balances, post a one-contract `KXETHPERP` bid at $0.01, log its order updates and cancel; [configuration](docs/margin.md#place-and-cancel-a-perps-order) | Demo by default; production via `KALSHI_ENV`; explicit `--submit` opt-in |
+| `cargo run --example margin_transfer -- --submit` | Transfer exactly $1 from primary predictions shard 0 to primary perps, preserving transfer state; [configuration](docs/margin.md#transfer-one-dollar-from-predictions-to-perps) | Demo by default; production via `KALSHI_ENV`; explicit `--submit` opt-in |
 
 ### Live market stream
 
@@ -299,11 +330,11 @@ KALSHI_DEMO_ORDER_OPT_IN=YES cargo test --test demo demo_create_and_cancel_order
 
 The second test also requires `KALSHI_MARKET_TICKER` and optionally `KALSHI_DEMO_ORDER_PRICE`. Never use production credentials in demo tests.
 
-Pinned machine-readable specifications live in `spec/`. `python3 tools/generate.py && cargo fmt` regenerates REST models/methods, WebSocket models/dispatch and the REST coverage table without network access. Python 3.9+ is needed only for development, not to build or use the crate. There is no build-time generator. See [research and design rationale](docs/research.md), [coverage and exclusions](docs/coverage.md), [snapshot provenance](spec/README.md) and [contribution guidance](CONTRIBUTING.md).
+Pinned machine-readable specifications live in `spec/`. `python3 tools/generate.py && cargo fmt` regenerates REST models/methods, WebSocket models/dispatch and both REST coverage tables without network access. Python 3.9+ is needed only for development, not to build or use the crate. There is no build-time generator. See [research and design rationale](docs/research.md), [coverage and exclusions](docs/coverage.md), [snapshot provenance](spec/README.md) and [contribution guidance](CONTRIBUTING.md).
 
 ## Limits
 
-Perps/Margin APIs, FIX, dedicated external feeds transport, CF Benchmarks REST passthrough and undocumented endpoints are separate coverage areas. This crate's environment presets and examples target Predictions. Some external-feed wire models appear in the shared AsyncAPI snapshot but that does not establish feed entitlements or provide a separate feed connection API.
+The Klear clearing-member API (`perps_scm_openapi.yaml`), FIX, dedicated external feeds transport, CF Benchmarks REST passthrough and undocumented endpoints are separate coverage areas. Predictions and margin each have typed bindings and WebSocket environment presets. Some external-feed wire models appear in the shared AsyncAPI snapshot but that does not establish feed entitlements or provide a separate feed connection API.
 
 Authenticated trading, account operations, institutional methods and live WebSocket streams remain unverified without credentials. The server enforces endpoint permissions, field ranges, market ticks, mutual exclusions and other business constraints. There is no full OpenAPI validator. New undocumented response fields are ignored; future enum values and unknown WebSocket types are retained. An incompatible change to a required field can require a spec/model update.
 

@@ -45,7 +45,27 @@ Commands expose all documented subscription parameters, including market UUIDs, 
 
 Unknown message types preserve full JSON. Known malformed messages fail rather than being silently treated as unknown. The SDK does not add reconnection, book reconstruction, sequence-gap repair, durable buffering or trading decisions.
 
-## Breaking changes handled
+## Perpetuals REST and WebSockets
+
+The November 16, 2026 margin extension pins Perps OpenAPI 3.0.0 (API information version **0.0.1**) and AsyncAPI 3.0.0 (API information version **2.0.0**). It provides all **55 trading REST operations** through `client.margin()`, with the [full method table](margin-rest-coverage.md). The predictions snapshots above remain unchanged.
+
+| Area | Implemented |
+| --- | --- |
+| Markets | Lists/details, current and recurring schedules, single/multiple orderbooks, trades and candlesticks |
+| Trading | Create/get/list/cancel/amend/decrease/cancel-all; complete order-group lifecycle |
+| Account and risk | Enablement, exchange status, perps API limits, balances, positions, fills, risk parameters, risk and notional limits |
+| Funding and fees | Payment history, historical/estimated rates, premium index, effective fees and fee schedule |
+| Portfolio controls | Margin subaccounts and transfers; predictions/margin transfers; isolated/cross exit triggers including bracket updates/deletion |
+| Corporate actions | REST notices and typed streamed action deltas |
+| FCM trading | Subtrader creation, initial-margin/notional risk controls, account notional limits and position transfers |
+
+All eight margin channels have separate typed models: `orderbook_delta`, `ticker`, `trade`, `fill`, `user_orders`, `order_group_updates`, `corporate_actions` and `market_lifecycle_v2`. Subscription/control APIs mirror predictions, including both receive methods and cancellation-safe heartbeat handling. The pinned perps AsyncAPI supplies three JSON server examples; other channel cases are covered with synthetic schema-based test messages. Official-example coverage alone does not establish all-channel live verification.
+
+The SDK preserves margin-specific bid/ask books, fixed-point counts and prices, millisecond stream timestamps, nullable schedule references, system-order source fields and subscription conflation parameters. Margin orderbooks do not require the predictions exchange clock. Array queries follow each endpoint's encoding metadata, including comma-separated ticker arrays for market schedules and multiple orderbooks.
+
+The same REST transport signs complete documented paths, including those outside `/margin`. Margin WebSockets use their own environment URLs and independent builder override. [Usage, examples and caveats](margin.md) describe trading sessions, funding timing, transfer restrictions and trigger behavior. Authenticated live perps calls and streams remain unverified without credentials.
+
+## Predictions breaking changes handled
 
 - Ed25519 alongside RSA-PSS, detected by parsing PKCS#8 contents. RSA PKCS#1 is also supported. No legacy password login.
 - Fixed-point dollar and quantity strings replace old integer-cent/integer-count response assumptions. Dollar values allow six decimals; quantities allow two. Request market tick/scale constraints remain server-validated.
@@ -61,8 +81,7 @@ Unknown message types preserve full JSON. Known malformed messages fail rather t
 
 | Surface | Status |
 | --- | --- |
-| Perps/Margin REST (`perps_openapi.yaml`, `/margin/...`) | Not implemented; do not use Predictions models or presets for Perps |
-| Perps/Margin WebSocket (`perps_asyncapi.yaml`) | Not implemented; timestamps, prices and contracts differ |
+| Klear clearing-member REST (`perps_scm_openapi.yaml`) | Not implemented; separate bearer authentication and hosts |
 | FIX | Not implemented |
 | Dedicated external feeds connection | Not implemented; shared wire types alone do not grant access |
 | CF Benchmarks REST passthrough | Not implemented; separate surface |
@@ -71,4 +90,4 @@ Unknown message types preserve full JSON. Known malformed messages fail rather t
 | Automatic retry/rate limiting/reconnection | Caller responsibility |
 | Full business-rule validation | Exchange responsibility; structs describe the wire format |
 
-The official [Perps overview](https://docs.kalshi.com/margin) and its separate specs must be researched before extending this SDK into that area.
+The margin coverage is limited to the pinned trading specifications. It does not include the separate Klear clearing-member API.
